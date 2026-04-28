@@ -1,0 +1,147 @@
+.landing {
+  min-height: 100vh;
+  padding: 40px 48px;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-body);
+  transition: background 0.4s ease;
+}
+
+/* Decorative grid lines */
+.gridLines {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 80px 80px;
+  opacity: 0.3;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, black 20%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, black 20%, transparent 70%);
+}
+
+/* Blobs */
+.blob1 {
+  position: absolute; top: -160px; right: -100px;
+  width: 600px; height: 600px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 65%);
+  pointer-events: none; animation: blobFloat 22s ease-in-out infinite;
+}
+.blob2 {
+  position: absolute; bottom: -140px; left: -80px;
+  width: 500px; height: 500px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 65%);
+  pointer-events: none; animation: blobFloat 28s ease-in-out infinite reverse;
+}
+.blob3 {
+  position: absolute; top: 35%; left: 50%;
+  width: 800px; height: 800px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(59,130,246,0.05) 0%, transparent 60%);
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+
+@keyframes blobFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(25px, -35px) scale(1.03); }
+  50% { transform: translate(-15px, 25px) scale(0.97); }
+  75% { transform: translate(20px, 15px) scale(1.02); }
+}
+
+/* Header */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 48px; position: relative; z-index: 1;
+}
+.logoRow { display: flex; align-items: center; gap: 14px; }
+.logoIcon {
+  width: 48px; height: 48px; border-radius: 14px;
+  background: var(--gradient-brand);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 24px rgba(37,99,235,0.35);
+}
+.brand { font-size: 22px; font-weight: 900; letter-spacing: -0.02em; color: var(--text-heading); }
+.tagline { font-size: 12px; color: var(--text-muted); margin-top: 2px; font-weight: 500; }
+
+.headerRight { display: flex; align-items: center; gap: 12px; }
+.themeToggle {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-secondary); cursor: pointer; transition: all 0.2s;
+  overflow: hidden;
+}
+.themeToggle:hover {
+  color: var(--blue-500); border-color: var(--blue-400); background: var(--bg-hover);
+}
+.headerBadge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 24px;
+  background: var(--success-bg); color: var(--success);
+  font-size: 12px; font-weight: 700;
+}
+
+/* Hero */
+.hero { text-align: center; margin-bottom: 48px; position: relative; z-index: 1; }
+.heroTitle {
+  font-size: 40px; font-weight: 900; letter-spacing: -0.04em;
+  color: var(--text-heading); margin-bottom: 14px; line-height: 1.1;
+}
+.heroSub {
+  font-size: 16px; color: var(--text-secondary);
+  max-width: 540px; margin: 0 auto 28px; line-height: 1.65;
+}
+
+/* Feature chips */
+.featureRow {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+}
+.featureChip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 24px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  box-shadow: var(--shadow-xs);
+}
+.featureChip svg { color: var(--blue-500); }
+
+/* Role Grid */
+.grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; max-width: 1020px;
+  margin: 0 auto 56px; position: relative; z-index: 1;
+}
+.roleCard {
+  position: relative; overflow: hidden;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 28px 24px; text-align: left;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.roleCard:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-card-hover);
+}
+.roleCard:hover .arrow { opacity: 1; transform: translateX(0); }
+.roleCard:hover .cardAccent { opacity: 1; }
+
+.cardTop { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.roleEmoji { font-size: 34px; }
+.arrow { color: var(--blue-500); opacity: 0; transform: translateX(-8px); transition: all 0.3s; }
+.roleName { font-size: 16px; font-weight: 800; color: var(--text-heading); margin-bottom: 6px; letter-spacing: -0.01em; }
+.roleDesc { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+.cardAccent { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; opacity: 0; transition: opacity 0.3s; }
+
+/* Footer */
+.footer { text-align: center; position: relative; z-index: 1; }
+.footer p { font-size: 12px; color: var(--text-muted); }
+.footer strong { color: var(--text-secondary); font-weight: 600; }
+
+@media (max-width: 860px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .heroTitle { font-size: 28px; }
+  .landing { padding: 24px; }
+}
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr; }
+}
