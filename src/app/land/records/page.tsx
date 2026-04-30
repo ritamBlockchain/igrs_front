@@ -1,31 +1,21 @@
 'use client';
 
-import { useState } from "react";
-import { Search, ChevronRight, CheckCircle, Clock, MapPin, User } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
-
-const MOCK_RECORDS = Array.from({ length: 20 }).map((_, i) => ({
-  id: `REC-2026-${i + 1}`,
-  owner: i === 0 ? 'John Doe' : `Owner ${i + 1}`,
-  village: 'Demo Village',
-  tehsil: 'Demo Taluka',
-  district: 'Demo District',
-  area: `${(Math.random() * 5 + 1).toFixed(2)}`,
-  landType: ['Agricultural', 'Residential', 'Commercial'][i % 3],
-  status: i === 19 ? 'PENDING' : 'ACTIVE',
-  version: i === 19 ? 1 : Math.floor(Math.random() * 3) + 1,
-  anchored: i !== 19,
-}));
+import { useData } from "@/context/DataContext";
 
 export default function LandRecordsPage() {
+  const { records, recordsLoading, recordsError, recordsTotal, fetchRecords } = useData();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
-  const filtered = MOCK_RECORDS.filter(r => {
-    const matchSearch = !search || r.id.toLowerCase().includes(search.toLowerCase()) || r.owner.toLowerCase().includes(search.toLowerCase());
-    const matchType = !typeFilter || r.landType === typeFilter;
-    return matchSearch && matchType;
-  });
+  // Fetch records on mount or when filters change
+  useEffect(() => {
+    fetchRecords(1, 50, { search, land_type: typeFilter });
+  }, [fetchRecords, search, typeFilter]);
+
+  const displayRecords = records;
 
   return (
     <div className="animate-in">
@@ -54,9 +44,26 @@ export default function LandRecordsPage() {
       </div>
 
       {/* Results count */}
-      <div style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 12 }}>
-        Showing {filtered.length} of {MOCK_RECORDS.length} records
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+          {recordsLoading ? 'Loading...' : `Showing ${displayRecords.length} of ${recordsTotal} records`}
+        </div>
+        <button 
+          onClick={() => fetchRecords(1, 50, { search, land_type: typeFilter })} 
+          disabled={recordsLoading}
+          className="btn btn-outline"
+          style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <RefreshCw size={14} style={{ animation: recordsLoading ? 'spin 1s linear infinite' : undefined }} />
+          Refresh
+        </button>
       </div>
+      
+      {recordsError && (
+        <div className="card" style={{ padding: 16, marginBottom: 16, background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
+          Error: {recordsError}
+        </div>
+      )}
 
       {/* Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
@@ -69,32 +76,49 @@ export default function LandRecordsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                <td style={{ padding: '14px 16px' }}>
-                  <span className="mono" style={{ fontWeight: 600, color: 'var(--blue-700)' }}>{r.id}</span>
-                </td>
-                <td style={{ padding: '14px 16px', fontWeight: 500, fontSize: 14 }}>{r.owner}</td>
-                <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--slate-600)' }}>{r.village}</td>
-                <td style={{ padding: '14px 16px', fontSize: 13 }}>{r.area}</td>
-                <td style={{ padding: '14px 16px' }}>
-                  <span className={`badge ${r.landType === 'Agricultural' ? 'badge-success' : r.landType === 'Residential' ? 'badge-info' : 'badge-warning'}`}>
-                    {r.landType}
-                  </span>
-                </td>
-                <td style={{ padding: '14px 16px' }}>
-                  <span className={`badge ${r.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`}>
-                    {r.status === 'ACTIVE' ? '● ' : '◌ '}{r.status}
-                  </span>
-                </td>
-                <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--slate-500)' }}>v{r.version}</td>
-                <td style={{ padding: '14px 16px' }}>
-                  <Link href={`/land/${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--blue-600)', fontSize: 13, fontWeight: 600 }}>
-                    View <ChevronRight size={14} />
-                  </Link>
+            {recordsLoading ? (
+              <tr>
+                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
+                  Loading records from Fabric...
                 </td>
               </tr>
-            ))}
+            ) : displayRecords.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
+                  No records found
+                </td>
+              </tr>
+            ) : (
+              displayRecords.map(r => (
+                <tr key={r.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '14px 16px' }}>
+                    <span className="mono" style={{ fontWeight: 600, color: 'var(--blue-700)' }}>{r.record_id}</span>
+                  </td>
+                  <td style={{ padding: '14px 16px', fontWeight: 500, fontSize: 14 }}>{r.owner_name}</td>
+                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--slate-600)' }}>{r.village_name}</td>
+                  <td style={{ padding: '14px 16px', fontSize: 13 }}>
+                    {(r.area && r.area !== '<nil>') ? r.area : (r.area_sq_m && String(r.area_sq_m) !== '<nil>' ? r.area_sq_m : '—')}
+                  </td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <span className={`badge ${r.land_type === 'Agricultural' ? 'badge-success' : r.land_type === 'Residential' ? 'badge-info' : 'badge-warning'}`}>
+                      {r.land_type}
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <span className={`badge ${r.status === 'verified' ? 'badge-success' : r.is_frozen ? 'badge-error' : 'badge-warning'}`}>
+                      {r.status === 'verified' ? '● ' : '◌ '}{r.status.toUpperCase()}
+                      {r.is_frozen && ' (FROZEN)'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--slate-500)' }}>v{r.version}</td>
+                  <td style={{ padding: '14px 16px' }}>
+                    <Link href={`/land/${r.record_id}`} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--blue-600)', fontSize: 13, fontWeight: 600 }}>
+                      View <ChevronRight size={14} />
+                    </Link>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

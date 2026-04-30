@@ -1,9 +1,10 @@
 'use client';
 
-import { useRole, ROLE_REGISTRY, UserRole } from "@/context/RoleContext";
+import { useRole, ROLE_REGISTRY } from "@/context/RoleContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useData } from "@/context/DataContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Layers, Shield, Sun, Moon, Zap, Database, GitBranch, Lock } from "lucide-react";
+import { ArrowRight, Layers, Shield, Sun, Moon, Zap, Database, GitBranch, Lock, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import styles from './landing.module.css';
 
@@ -42,11 +43,12 @@ export default function HomePage() {
 function LandingPage() {
   const { setRole } = useRole();
   const { theme, toggleTheme } = useTheme();
+  const { systemInfo, stats } = useData();
 
   const features = [
-    { icon: <Database size={18} />, label: '37 Records On-Chain' },
-    { icon: <GitBranch size={18} />, label: 'Multi-Org Fabric' },
-    { icon: <Lock size={18} />, label: '4-Layer Security' },
+    { icon: <Database size={18} />, label: `${stats?.total_records || 0} Records On-Chain` },
+    { icon: <GitBranch size={18} />, label: systemInfo?.fabricConnected ? 'Fabric Connected' : 'Multi-Org Fabric' },
+    { icon: <Lock size={18} />, label: 'RBAC Secured' },
     { icon: <Zap size={18} />, label: 'Polygon L2 Anchored' },
   ];
 
@@ -162,7 +164,7 @@ function LandingPage() {
         animate={{ opacity: 1 }}
         transition={{ delay: 1 }}
       >
-        <p>Fabric Channel: <strong>landrecord-channel</strong> · Chaincode: <strong>landrecord v1.0</strong> · Network: <strong>Polygon Amoy (L2)</strong></p>
+        <p>Fabric Channel: <strong>{systemInfo?.channel || 'landrecord-channel'}</strong> · Chaincode: <strong>{systemInfo?.chaincode || 'landrecord'} v{systemInfo?.version || '1.0'}</strong> · Network: <strong>{systemInfo?.network || 'Polygon Amoy (L2)'}</strong></p>
       </motion.footer>
     </div>
   );
@@ -173,13 +175,22 @@ function LandingPage() {
    ================================================================ */
 function Dashboard() {
   const { role, roleInfo } = useRole();
+  const { stats, statsLoading, lastRefresh, refreshAll, isRefreshing, systemInfo } = useData();
   const sections = getSectionsForRole(role!);
 
-  const stats = [
-    { label: 'Total Records', value: 37, suffix: '', sub: '36 verified', color: 'var(--blue-500)', icon: <Database size={20} /> },
-    { label: 'Pending Mutations', value: 5, suffix: '', sub: '4 workflows active', color: 'var(--warning)', icon: <GitBranch size={20} /> },
-    { label: 'Batches Anchored', value: 4, suffix: '', sub: '100% verified', color: 'var(--success)', icon: <Layers size={20} /> },
-    { label: 'Digitization', value: 97, suffix: '%', sub: '1 record pending', color: 'var(--info)', icon: <Zap size={20} /> },
+  // Ensure values are always numbers (handle API returning objects)
+  const num = (val: unknown): number => {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseInt(val, 10) || 0;
+    if (val && typeof val === 'object' && 'value' in val) return num((val as {value: unknown}).value);
+    return 0;
+  };
+
+  const displayStats = [
+    { label: 'Total Records', value: num(stats?.total_records), suffix: '', sub: `${num(stats?.verified_records)} verified`, color: 'var(--blue-500)', icon: <Database size={20} /> },
+    { label: 'Pending Mutations', value: num(stats?.pending_mutations), suffix: '', sub: `${num(stats?.pending_mutations)} workflows active`, color: 'var(--warning)', icon: <GitBranch size={20} /> },
+    { label: 'Batches Anchored', value: num(stats?.anchored_batches), suffix: '', sub: systemInfo?.fabricConnected ? 'Fabric Connected' : 'Connecting...', color: 'var(--success)', icon: <Layers size={20} /> },
+    { label: 'Digitization', value: num(stats?.digitization_progress), suffix: '%', sub: `${num(stats?.pending_records)} record${num(stats?.pending_records) !== 1 ? 's' : ''} pending`, color: 'var(--info)', icon: <Zap size={20} /> },
   ];
 
   return (
@@ -195,8 +206,22 @@ function Dashboard() {
       </motion.div>
 
       {/* Stats Grid */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {statsLoading ? 'Loading...' : lastRefresh ? `Last updated: ${lastRefresh.toLocaleTimeString()}` : 'Not synced'}
+        </div>
+        <button 
+          onClick={refreshAll} 
+          disabled={isRefreshing}
+          className="btn btn-outline"
+          style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, opacity: isRefreshing ? 0.6 : 1 }}
+        >
+          <RefreshCw size={14} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : undefined }} />
+          {isRefreshing ? 'Syncing...' : 'Refresh'}
+        </button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 36 }}>
-        {stats.map((s, i) => (
+        {displayStats.map((s, i) => (
           <motion.div
             key={s.label}
             initial={{ opacity: 0, y: 20 }}
@@ -215,9 +240,9 @@ function Dashboard() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.3 + i * 0.1, type: 'spring', stiffness: 200 }}
                 >
-                  {s.value}{s.suffix}
+                  {statsLoading ? '-' : s.value}{s.suffix}
                 </motion.div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>{s.sub}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>{statsLoading ? 'Loading...' : s.sub}</div>
               </div>
               <div style={{ width: 42, height: 42, borderRadius: 12, background: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color }}>
                 {s.icon}

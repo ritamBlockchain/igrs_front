@@ -1,45 +1,207 @@
 'use client';
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
-import { Shield, MapPin, User, Clock, Hash, CheckCircle, FileText, History, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Shield, MapPin, User, Clock, Hash, CheckCircle, FileText, History, AlertTriangle, RefreshCw } from "lucide-react";
+import { api } from "@/lib/api";
+import { useRole } from "@/context/RoleContext";
+import { LandLineageTree } from "@/components/LandLineageTree";
+import CONFIG from "@/lib/config";
 
 export default function LandDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const [tab, setTab] = useState<'details'|'history'|'verify'|'owner'>('details');
+  const { role } = useRole();
+  const [tab, setTab] = useState<'details'|'history'|'lineage'|'verify'|'owner'>('details');
+  
+  const [record, setRecord] = useState<any>(null);
+  const [chainOfTitle, setChainOfTitle] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeMutations, setActiveMutations] = useState<any[]>([]);
 
-  const record = {
-    id, owner: 'John Doe', ownerID: 'OWNER-001', village: 'Demo Village',
-    tehsil: 'Demo Taluka', district: 'Demo District', surveyNo: '123/A',
-    khasraNo: '456', area: '2.50', landType: 'Agricultural', status: 'ACTIVE',
-    version: 3, docHash: 'a1b2c3d4e5f6...', indexHash: 'f6e5d4c3b2a1...',
-    createdAt: '2026-04-20', updatedAt: '2026-04-28', frozen: false,
+  // Verification state
+  const [verifyHash, setVerifyHash] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{success: boolean, message: string, data?: any} | null>(null);
+
+  // Set Owner state
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerHash, setOwnerHash] = useState('');
+  const [settingOwner, setSettingOwner] = useState(false);
+  const [setOwnerResult, setSetOwnerResult] = useState<{success: boolean, message: string} | null>(null);
+
+  // Auto-populate owner name and hash
+  useEffect(() => {
+    if (record?.owner_name) {
+      setOwnerName(record.owner_name);
+      const computeHash = async (text: string) => {
+        const msgUint8 = new TextEncoder().encode(text);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      };
+      computeHash(record.owner_name).then(setOwnerHash);
+    }
+  }, [record?.owner_name]);
+
+  const handleSetOwner = async () => {
+    if (!ownerName || !ownerHash) {
+      setSetOwnerResult({ success: false, message: 'Owner name and hash are required' });
+      return;
+    }
+    
+    setSettingOwner(true);
+    setSetOwnerResult(null);
+    try {
+      const res = await api.setInitialOwner(id, ownerName, ownerHash);
+      setSetOwnerResult({ success: true, message: res.message || 'Successfully set initial owner on ledger.' });
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setSetOwnerResult({ 
+        success: false, 
+        message: err instanceof Error ? err.message : 'Failed to set owner' 
+      });
+    } finally {
+      setSettingOwner(false);
+    }
   };
 
-  const historyEntries = [
-    { version: 3, action: 'Sale Mutation Finalized', actor: 'Talati', date: '2026-04-28', owner: 'John Doe' },
-    { version: 2, action: 'Ownership Initialized', actor: 'Revenue Admin', date: '2026-04-22', owner: 'Prev Owner' },
-    { version: 1, action: 'Land Registered', actor: 'Admin', date: '2026-04-20', owner: 'Initial Owner' },
-  ];
+  const handleVerify = async () => {
+    if (!verifyHash) {
+      setVerifyResult({ success: false, message: 'Please enter a document hash to verify' });
+      return;
+    }
+    
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const res = await api.verifyLandRecord(id, verifyHash);
+      const data = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
+      
+      if (data.valid || data.Valid) {
+        setVerifyResult({ 
+          success: true, 
+          message: 'Verification Successful! The document hash matches the immutable ledger record.',
+          data 
+        });
+      } else {
+        setVerifyResult({ 
+          success: false, 
+          message: 'Verification Failed. The document hash does not match the ledger record.',
+          data
+        });
+      }
+    } catch (err) {
+      setVerifyResult({ 
+        success: false, 
+        message: err instanceof Error ? err.message : 'Verification failed to execute on the network' 
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
-  const tabs = [
+  // Fetch record data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [recordData, historyData, mutationsData] = await Promise.all([
+          api.getRecord(id).catch(() => null),
+          api.getRecordHistory(id).catch(() => ({ timeline: [] })),
+          api.getMutationsByRecordId(id).catch(() => ({ mutations: [] })),
+        ]);
+        
+        if (recordData) {
+          // The API returns { record, chainOfTitle, ownershipGraph, ... }
+          setRecord(recordData.record || recordData);
+          setChainOfTitle(recordData.chainOfTitle || []);
+        }
+        
+        // Filter mutations for this record
+        const recordMutations = (mutationsData.mutations || []).filter(
+          (m: any) => m.status !== 'finalized' && m.status !== 'FINALIZED'
+        );
+        setActiveMutations(recordMutations);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch record');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (id) {
+      fetchData();
+    }
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="animate-in" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'var(--slate-500)' }}>Loading record from Fabric...</div>
+      </div>
+    );
+  }
+
+  if (error || !record) {
+    return (
+      <div className="animate-in" style={{ padding: 40, textAlign: 'center' }}>
+        <AlertTriangle size={48} color="var(--error)" style={{ marginBottom: 16 }} />
+        <h2>Record Not Found</h2>
+        <p style={{ color: 'var(--slate-500)', marginTop: 8 }}>{error || `Record ${id} not found on the ledger`}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="btn btn-primary" 
+          style={{ marginTop: 16 }}
+        >
+          <RefreshCw size={16} /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  const tabs: Array<{ key: 'details' | 'history' | 'lineage' | 'verify' | 'owner'; label: string; icon: React.ElementType }> = [
     { key: 'details', label: 'Record Details', icon: FileText },
     { key: 'history', label: 'History', icon: History },
+    { key: 'lineage', label: 'Lineage Tree', icon: Hash },
     { key: 'verify', label: 'Verify', icon: Shield },
-    { key: 'owner', label: 'Set Owner', icon: User },
-  ] as const;
+    ...(role && ['Admin', 'Revenue Admin', 'Revenue Officer'].includes(role) ? [{ key: 'owner' as const, label: 'Set Owner', icon: User }] : []),
+  ];
 
   return (
     <div className="animate-in">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1>📄 {id}</h1>
+          <h1>📄 {record.record_id || id}</h1>
           <p>Land record detail view with full history and verification</p>
+          {activeMutations.length > 0 && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {activeMutations.map(m => (
+                <span key={m.id} className="badge badge-warning">
+                  Pending {m.mutation_type} mutation
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-        <span className={`badge ${record.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: 13, padding: '6px 14px' }}>
-          {record.status}
-        </span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="btn btn-outline" 
+            style={{ fontSize: 12 }}
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+          <span className={`badge ${record.status === 'verified' ? 'badge-success' : record.is_frozen ? 'badge-error' : 'badge-warning'}`} style={{ fontSize: 13, padding: '6px 14px' }}>
+            {record.status?.toUpperCase?.() || 'UNKNOWN'}
+            {record.is_frozen && ' (FROZEN)'}
+          </span>
+        </div>
       </div>
 
       {/* Tab Nav */}
@@ -61,21 +223,57 @@ export default function LandDetailPage() {
 
       {/* Details Tab */}
       {tab === 'details' && (
-        <div className="card" style={{ padding: 28 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {activeMutations.length > 0 && (
+            <div className="card" style={{ padding: 24, border: '1px solid var(--warning)', background: 'var(--warning-bg)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <AlertTriangle size={20} color="var(--warning)" />
+                <h3 style={{ margin: 0, color: 'var(--warning)', fontSize: 16 }}>Active Mutations Pending</h3>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {activeMutations.map(m => (
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, background: '#fff', padding: 16, borderRadius: 8, border: '1px solid #fde68a' }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>Mutation Type</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--slate-800)' }}>{m.mutation_type || 'Transfer'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>Status</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--warning)' }}>{m.status}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>From (Current Owner)</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate-700)' }}>{m.current_owner || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>To (New Owner)</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--success)' }}>{m.new_owner || 'N/A'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="card" style={{ padding: 28 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
             {[
-              { label: 'Owner', value: record.owner, icon: <User size={14} /> },
-              { label: 'Village', value: record.village, icon: <MapPin size={14} /> },
-              { label: 'Tehsil', value: record.tehsil, icon: <MapPin size={14} /> },
-              { label: 'District', value: record.district, icon: <MapPin size={14} /> },
-              { label: 'Survey No.', value: record.surveyNo, icon: <Hash size={14} /> },
-              { label: 'Khasra No.', value: record.khasraNo, icon: <Hash size={14} /> },
-              { label: 'Area', value: `${record.area} sqm`, icon: <MapPin size={14} /> },
-              { label: 'Land Type', value: record.landType },
-              { label: 'Version', value: `v${record.version}` },
-              { label: 'Created', value: record.createdAt, icon: <Clock size={14} /> },
-              { label: 'Last Updated', value: record.updatedAt, icon: <Clock size={14} /> },
-              { label: 'Frozen', value: record.frozen ? 'Yes' : 'No' },
+              { label: 'Owner', value: record.owner_name, icon: <User size={14} /> },
+              { label: 'Village', value: record.village_name, icon: <MapPin size={14} /> },
+              { label: 'Taluka', value: record.taluka_name, icon: <MapPin size={14} /> },
+              { label: 'District', value: record.district_name, icon: <MapPin size={14} /> },
+              { label: 'Plot Number', value: record.plot_number || 'N/A', icon: <Hash size={14} /> },
+              { label: 'Survey Number', value: record.survey_number || 'N/A', icon: <Hash size={14} /> },
+              { label: 'Area', value: (() => {
+                const a = record.area && record.area !== '<nil>' ? record.area : (record.area_sq_m && String(record.area_sq_m) !== '<nil>' ? record.area_sq_m : null);
+                return a ? `${a} sqm` : 'N/A';
+              })(), icon: <MapPin size={14} /> },
+              { label: 'Land Type', value: (record.land_type && record.land_type !== 'LAND') ? record.land_type : (record.land_type || 'N/A') },
+              { label: 'Doc Type', value: record.doc_type || 'N/A' },
+              { label: 'Version', value: `v${record.version || 1}` },
+              { label: 'Created', value: record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A', icon: <Clock size={14} /> },
+              { label: 'Updated', value: record.updated_at ? new Date(record.updated_at).toLocaleDateString() : 'N/A', icon: <Clock size={14} /> },
+              { label: 'Anchored', value: (record.anchor_status === 'anchored' || record.is_anchored || record.tx_hash) ? 'Yes ✓' : 'No' },
             ].map(f => (
               <div key={f.label}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{f.label}</div>
@@ -84,30 +282,109 @@ export default function LandDetailPage() {
             ))}
           </div>
           <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--slate-100)' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 6 }}>Document Hash</div>
-            <div className="mono" style={{ padding: '10px 14px', background: 'var(--slate-50)', borderRadius: 8, color: 'var(--slate-600)', wordBreak: 'break-all' }}>{record.docHash}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 6 }}>Record ID</div>
+            <div className="mono" style={{ padding: '10px 14px', background: 'var(--slate-50)', borderRadius: 8, color: 'var(--slate-600)', wordBreak: 'break-all' }}>{record.record_id}</div>
+            {record.document_hash && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 6 }}>Document Hash</div>
+                <div className="mono" style={{ padding: '10px 14px', background: 'var(--slate-50)', borderRadius: 8, color: 'var(--slate-600)', wordBreak: 'break-all', fontSize: 12 }}>{record.document_hash}</div>
+              </div>
+            )}
+            {record.tx_hash && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--success)', textTransform: 'uppercase', marginBottom: 6 }}>✓ Transaction Hash (Fabric Ledger)</div>
+                <div className="mono" style={{ padding: '10px 14px', background: 'var(--slate-50)', borderRadius: 8, color: 'var(--slate-600)', wordBreak: 'break-all', fontSize: 12 }}>{record.tx_hash}</div>
+              </div>
+            )}
+            {(record.anchor_status === 'anchored' || record.is_anchored) && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>This record is anchored on the Hyperledger Fabric blockchain</div>
+              </div>
+            )}
           </div>
+        </div>
         </div>
       )}
 
       {/* History Tab */}
       {tab === 'history' && (
-        <div className="card" style={{ padding: 28 }}>
-          <h3 style={{ marginBottom: 20 }}>Ownership & State History</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {historyEntries.map((h, i) => (
-              <div key={i} style={{ display: 'flex', gap: 16, padding: '16px 0', borderBottom: i < historyEntries.length - 1 ? '1px solid var(--slate-100)' : 'none' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--blue-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blue-600)', flexShrink: 0 }}>
-                  v{h.version}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{h.action}</div>
-                  <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>
-                    By <strong>{h.actor}</strong> · Owner: {h.owner} · {h.date}
+        <div className="card" style={{ padding: 28, position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+            <History size={20} color="var(--blue-600)" />
+            <h3 style={{ margin: 0 }}>Chain of Title (Fabric Ledger)</h3>
+          </div>
+          
+          {chainOfTitle.length === 0 ? (
+            <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate-400)', background: 'var(--slate-50)', borderRadius: 12 }}>
+              <Clock size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+              <p>No ownership transfer history found on the ledger</p>
+            </div>
+          ) : (
+            <div style={{ position: 'relative', paddingLeft: 20 }}>
+              {/* Vertical Line */}
+              <div style={{ position: 'absolute', left: 8, top: 10, bottom: 10, width: 2, background: 'linear-gradient(to bottom, var(--blue-200), var(--slate-100))', borderRadius: 1 }} />
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                {chainOfTitle.map((h: any, i: number) => (
+                  <div key={i} style={{ position: 'relative', display: 'flex', gap: 20 }}>
+                    {/* Dot */}
+                    <div style={{ 
+                      position: 'absolute', left: -18, top: 6, width: 14, height: 14, borderRadius: '50%', 
+                      background: i === 0 ? 'var(--blue-600)' : '#fff', 
+                      border: `3px solid ${i === 0 ? 'var(--blue-100)' : 'var(--blue-200)'}`,
+                      boxShadow: i === 0 ? '0 0 0 4px var(--blue-50)' : 'none',
+                      zIndex: 2 
+                    }} />
+                    
+                    <div style={{ flex: 1, padding: 20, background: i === 0 ? 'var(--blue-50)' : '#fff', borderRadius: 16, border: `1px solid ${i === 0 ? 'var(--blue-100)' : 'var(--slate-200)'}`, boxShadow: i === 0 ? 'var(--shadow-sm)' : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Mutation Type</div>
+                            <span className={`badge ${h.transfer_type?.toLowerCase().includes('sale') ? 'badge-success' : h.transfer_type?.toLowerCase().includes('gift') ? 'badge-warning' : 'badge-primary'}`} style={{ fontSize: 11, padding: '4px 12px' }}>
+                              {h.transfer_type || 'Original Registration'}
+                            </span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Owner Recorded</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--slate-800)' }}>{h.owner_name}</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--slate-400)', fontWeight: 500, textAlign: 'right' }}>
+                          <div style={{ color: 'var(--slate-600)', fontWeight: 600 }}>{h.transfer_date && new Date(h.transfer_date).toLocaleDateString()}</div>
+                          <div style={{ fontSize: 10 }}>{h.transfer_date && new Date(h.transfer_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                      </div>
+                      
+                      {h.tx_hash && (
+                        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Shield size={12} color="var(--blue-500)" />
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--blue-600)', background: 'rgba(59, 130, 246, 0.08)', padding: '4px 10px', borderRadius: 6, wordBreak: 'break-all' }}>
+                            {h.tx_hash}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lineage Tab */}
+      {tab === 'lineage' && (
+        <div className="card" style={{ padding: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+            <Hash size={20} color="var(--blue-600)" />
+            <h3 style={{ margin: 0 }}>Land Lineage Hierarchy</h3>
+          </div>
+          <div style={{ background: '#f8fafc', borderRadius: 24, padding: 4 }}>
+            <LandLineageTree 
+              apiUrl={CONFIG.API_BASE_URL} 
+              recordId={record.record_id || id} 
+            />
           </div>
         </div>
       )}
@@ -120,8 +397,63 @@ export default function LandDetailPage() {
             Enter the document hash to verify against the on-chain record. This is a public verification function.
           </p>
           <label className="label">Input Document Hash (SHA-256)</label>
-          <input className="input mono" placeholder="Enter 64-character hex hash to verify..." style={{ marginBottom: 16 }} />
-          <button className="btn btn-primary">Verify Against Ledger</button>
+          <input 
+            className="input mono" 
+            placeholder="Enter 64-character hex hash to verify..." 
+            style={{ marginBottom: 16 }} 
+            value={verifyHash}
+            onChange={(e) => setVerifyHash(e.target.value)}
+          />
+          <button 
+            className="btn btn-primary" 
+            onClick={handleVerify}
+            disabled={verifying || !verifyHash}
+          >
+            {verifying ? (
+              <><RefreshCw size={16} className="spin" /> Verifying...</>
+            ) : (
+              <><Shield size={16} /> Verify Against Ledger</>
+            )}
+          </button>
+
+          {verifyResult && (
+            <div style={{ 
+              marginTop: 24, 
+              padding: 16, 
+              borderRadius: 8, 
+              background: verifyResult.success ? 'var(--green-50)' : 'var(--red-50)',
+              border: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}`
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: verifyResult.success ? 'var(--green-700)' : 'var(--red-700)', fontWeight: 600, marginBottom: 8 }}>
+                {verifyResult.success ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                {verifyResult.success ? 'Valid Record' : 'Invalid Match'}
+              </div>
+              <p style={{ fontSize: 13, color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', margin: 0 }}>
+                {verifyResult.message}
+              </p>
+              {verifyResult.data && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Ledger Version Checked
+                  </div>
+                  <div style={{ fontSize: 13, color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)' }}>
+                    v{verifyResult.data.version || verifyResult.data.Version}
+                  </div>
+                  
+                  {verifyResult.data.lastTxId && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginTop: 12, marginBottom: 4 }}>
+                        Transaction Hash
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)' }}>
+                        {verifyResult.data.lastTxId || verifyResult.data.LastTxID}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -135,13 +467,50 @@ export default function LandDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label className="label">Owner Name *</label>
-              <input className="input" placeholder="Full legal name" />
+              <input 
+                className="input" 
+                placeholder="Full legal name" 
+                value={ownerName}
+                readOnly // Automated
+              />
             </div>
             <div>
               <label className="label">Owner Hash (SHA-256) *</label>
-              <input className="input mono" placeholder="64-character hex hash" />
+              <input 
+                className="input mono" 
+                placeholder="64-character hex hash" 
+                value={ownerHash}
+                readOnly // Automated
+              />
             </div>
-            <button className="btn btn-primary">Set Owner on Ledger</button>
+            <button 
+              className="btn btn-primary"
+              onClick={handleSetOwner}
+              disabled={settingOwner || !ownerName || !ownerHash}
+            >
+              {settingOwner ? (
+                <><RefreshCw size={16} className="spin" /> Setting Owner...</>
+              ) : (
+                <><User size={16} /> Set Owner on Ledger</>
+              )}
+            </button>
+            {setOwnerResult && (
+              <div style={{ 
+                marginTop: 8, 
+                padding: 12, 
+                borderRadius: 8, 
+                background: setOwnerResult.success ? 'var(--green-50)' : 'var(--red-50)',
+                color: setOwnerResult.success ? 'var(--green-700)' : 'var(--red-700)',
+                fontSize: 13,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                {setOwnerResult.success ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                {setOwnerResult.message}
+              </div>
+            )}
           </div>
         </div>
       )}
