@@ -21,6 +21,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/', roles: ['*'] },
   { name: 'Register Land', icon: PenTool, path: '/land/register', roles: ['Admin', 'Revenue Admin'] },
+  { name: 'Bulk Operations', icon: Package, path: '/land/bulk', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Land Records', icon: Map, path: '/land/records', roles: ['*'] },
   { name: 'Sale Mutation', icon: FileText, path: '/mutations/sale', roles: ['Admin', 'Revenue Admin', 'Court Registrar', 'Collector'] },
   { name: 'Gift Mutation', icon: FileText, path: '/mutations/gift', roles: ['Admin', 'Revenue Admin', 'Court Registrar', 'Collector'] },
@@ -50,7 +51,7 @@ export default function Sidebar() {
     item.roles.includes('*') || item.roles.includes(role)
   );
 
-  const mainNav = filtered.slice(0, 3);
+  const mainNav = filtered.filter(i => ['/', '/land/register', '/land/bulk', '/land/records'].includes(i.path));
   const mutations = filtered.filter(i => i.path.startsWith('/mutations') || i.path === '/freeze');
   const privateData = filtered.filter(i => i.path.startsWith('/private'));
   const system = filtered.filter(i => ['/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path));
