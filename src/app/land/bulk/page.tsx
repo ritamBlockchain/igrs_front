@@ -14,11 +14,15 @@ import {
   Trash2,
   Copy,
   Download,
-  Boxes
+  Boxes,
+  Zip,
+  FileJson,
+  FileCode
 } from "lucide-react";
 import Link from "next/link";
 import { useData } from "@/context/DataContext";
 import api, { LandRecord } from "@/lib/api";
+import CONFIG from "@/lib/config";
 
 type IngestionStatus = 'idle' | 'parsing' | 'ready' | 'uploading' | 'completed' | 'error';
 
@@ -27,34 +31,31 @@ interface ParsedRecord {
   owner_name: string;
   owner_id: string;
   survey_no: string;
+  khasra_no: string;
   area_sq_m: number;
   land_type: string;
   village_name: string;
+  tehsil_name: string;
+  district_name: string;
+  ownership_type: string;
   status: 'pending' | 'success' | 'error';
   error?: string;
 }
 
 export default function BulkOperationsPage() {
-  const { records, recordsLoading, recordsTotal, fetchRecords } = useData();
-  const [activeTab, setActiveTab] = useState<'ingestion' | 'selection'>('ingestion');
+  const { records, recordsLoading, fetchRecords } = useData();
+  const [activeTab, setActiveTab] = useState<'csv' | 'json' | 'pdf' | 'db'>('csv');
   
   // Ingestion State
   const [ingestionStatus, setIngestionStatus] = useState<IngestionStatus>('idle');
   const [parsedData, setParsedData] = useState<ParsedRecord[]>([]);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Selection State
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Fetch records for selection tab
-  useEffect(() => {
-    if (activeTab === 'selection') {
-      fetchRecords(1, 50);
-    }
-  }, [activeTab, fetchRecords]);
+  
+  // Refs for different file types
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // --- CSV Ingestion Logic ---
 
@@ -68,9 +69,7 @@ export default function BulkOperationsPage() {
       try {
         const text = event.target?.result as string;
         const lines = text.split('\n').filter(line => line.trim() !== '');
-        if (lines.length < 2) {
-          throw new Error('CSV file is empty or missing headers');
-        }
+        if (lines.length < 2) throw new Error('CSV file is empty or missing headers');
 
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
         const rows = lines.slice(1);
@@ -79,17 +78,24 @@ export default function BulkOperationsPage() {
           const values = row.split(',').map(v => v.trim());
           const record: any = {};
           headers.forEach((header, i) => {
-            record[header] = values[i];
+            const cleanHeader = header.replace(/\([^)]*\)/g, '').trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').toLowerCase();
+            record[cleanHeader] = values[i];
+            const minimalHeader = header.replace(/[^a-z0-9]/gi, '').toLowerCase();
+            record[minimalHeader] = values[i];
           });
 
           return {
-            record_id: record.record_id || `REC-${Math.floor(Math.random() * 1000000)}`,
-            owner_name: record.owner_name || 'Unknown',
-            owner_id: record.owner_id || 'N/A',
-            survey_no: record.survey_no || 'N/A',
-            area_sq_m: parseFloat(record.area_sq_m) || 0,
-            land_type: record.land_type || 'Agricultural',
-            village_name: record.village_name || 'Default',
+            record_id: record.record_id || record.recordid || `REC-${Math.floor(Math.random() * 1000000)}`,
+            owner_name: record.owner_name || record.ownername || record.owner || record.owner_id || record.ownerid || 'Unknown',
+            owner_id: record.owner_id || record.ownerid || 'N/A',
+            survey_no: record.survey_no || record.surveyno || record.survey_number || record.surveynumber || 'N/A',
+            khasra_no: record.khasra_no || record.khasrano || record.khasra_number || record.khasranumber || 'N/A',
+            area_sq_m: parseFloat(record.area) || parseFloat(record.areasqm) || parseFloat(record.area_sq_m) || 0,
+            land_type: record.land_type || record.landtype || 'Agricultural',
+            village_name: record.village_name || record.villagename || record.village || 'Default',
+            tehsil_name: record.tehsil_name || record.tehsilname || record.tehsil || record.taluka || 'Default',
+            district_name: record.district_name || record.districtname || record.district || 'Default',
+            ownership_type: record.ownership_type || record.ownershiptype || record.ownership || record['ownership type'] || 'Full Ownership',
             status: 'pending'
           };
         });
@@ -101,11 +107,53 @@ export default function BulkOperationsPage() {
         setIngestionStatus('error');
       }
     };
-    reader.onerror = () => {
-      setErrorMessage('Failed to read file');
-      setIngestionStatus('error');
+    reader.readAsText(file);
+  };
+
+  const handleJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIngestionStatus('parsing');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        const records = Array.isArray(json) ? json : [json];
+        const data: ParsedRecord[] = records.map((r: any) => ({
+          record_id: r.record_id || `JSON-${Math.floor(Math.random() * 1000)}`,
+          owner_name: r.owner_name || 'N/A',
+          owner_id: r.owner_id || 'N/A',
+          survey_no: r.survey_no || '-',
+          khasra_no: r.khasra_no || '-',
+          area_sq_m: r.area || 0,
+          land_type: r.land_type || 'JSON Record',
+          village_name: r.village_name || '-',
+          tehsil_name: r.tehsil_name || '-',
+          district_name: r.district_name || '-',
+          ownership_type: r.ownership_type || 'N/A',
+          status: 'pending'
+        }));
+        setParsedData(data);
+        setIngestionStatus('ready');
+      } catch (err) {
+        setErrorMessage("Invalid JSON format");
+        setIngestionStatus('error');
+      }
     };
     reader.readAsText(file);
+  };
+
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIngestionStatus('ready');
+    setParsedData([{ 
+      record_id: 'PDF-READY', 
+      owner_name: file.name, 
+      owner_id: file.type === 'application/zip' ? 'ZIP Archive' : 'PDF Document',
+      survey_no: '-', khasra_no: '-', area_sq_m: 0, land_type: 'OCR Pending',
+      village_name: '-', tehsil_name: '-', district_name: '-', ownership_type: '-', status: 'pending' 
+    }]);
   };
 
   const startIngestion = async () => {
@@ -113,36 +161,62 @@ export default function BulkOperationsPage() {
     
     setIngestionStatus('uploading');
     setProgress(0);
+    setErrorMessage(null);
     
-    let successCount = 0;
-    const newData = [...parsedData];
-
-    for (let i = 0; i < newData.length; i++) {
-      try {
-        const item = newData[i];
-        await api.createRecord({
-          record_id: item.record_id,
-          owner_name: item.owner_name,
-          owner_id: item.owner_id,
-          survey_no: item.survey_no,
-          area_sq_m: item.area_sq_m,
-          land_type: item.land_type,
-          village_name: item.village_name,
-          doc_type: 'Bulk Ingestion',
-          ownership_type: 'Full Ownership'
-        });
-        
-        newData[i] = { ...item, status: 'success' };
-        successCount++;
-      } catch (err) {
-        newData[i] = { ...item, status: 'error', error: err instanceof Error ? err.message : 'Unknown error' };
-      }
+    try {
+      let file: File | null = null;
+      let endpoint = '';
       
-      setParsedData([...newData]);
-      setProgress(Math.round(((i + 1) / newData.length) * 100));
-    }
+      if (activeTab === 'csv') {
+        file = csvInputRef.current?.files?.[0] || null;
+        endpoint = '/api/ingest/csv-ingest';
+      } else if (activeTab === 'json') {
+        file = jsonInputRef.current?.files?.[0] || null;
+        endpoint = '/api/ingest/json-ingest';
+      } else if (activeTab === 'pdf') {
+        file = pdfInputRef.current?.files?.[0] || null;
+        endpoint = '/api/ingest/pdf-ingest';
+      }
 
-    setIngestionStatus('completed');
+      if (!file) throw new Error("No file selected");
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('batch_id', `BATCH-${Date.now()}`);
+
+      const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-User-Role': localStorage.getItem('jade_role') || 'Admin' }
+      });
+
+      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+      const result = await response.json();
+      
+      const newData = [...parsedData];
+      if (result && result.rows && Array.isArray(result.rows)) {
+        result.rows.forEach((rowResult: any) => {
+          const idx = rowResult.row_index - 1;
+          if (idx >= 0 && idx < newData.length) {
+            newData[idx] = {
+              ...newData[idx],
+              status: rowResult.ok ? 'success' : 'error',
+              record_id: rowResult.record_id || newData[idx].record_id,
+              error: rowResult.errors?.join(', ') || rowResult.reason
+            };
+          }
+        });
+      }
+
+      setParsedData(newData);
+      if (result.summary?.failed > 0) {
+        setErrorMessage(`Ingestion completed with ${result.summary.failed} errors.`);
+      }
+      setIngestionStatus('completed');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Upload failed');
+      setIngestionStatus('error');
+    }
   };
 
   const resetIngestion = () => {
@@ -150,188 +224,154 @@ export default function BulkOperationsPage() {
     setParsedData([]);
     setProgress(0);
     setErrorMessage(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  // --- Selection Logic ---
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === records.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(records.map(r => r.record_id)));
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
-  const handleBulkAction = (action: string) => {
-    alert(`Bulk action "${action}" on ${selectedIds.size} records`);
-    // Implementation would go here (e.g. batching for anchoring)
+    if (csvInputRef.current) csvInputRef.current.value = '';
+    if (jsonInputRef.current) jsonInputRef.current.value = '';
+    if (pdfInputRef.current) pdfInputRef.current.value = '';
   };
 
   const downloadSampleCSV = () => {
-    const headers = "record_id,owner_name,owner_id,survey_no,area_sq_m,land_type,village_name";
-    const sample = "\nREC-1001,Rajesh Kumar,UID-9988,S-45,1200,Agricultural,Amrol\nREC-1002,Sunita Devi,UID-7766,S-46,850,Residential,Bhopal";
+    const headers = "record_id,owner_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type";
+    const sample = "\nMP-BHO-2026001,Rajesh Kumar,UID-9988,S-45,288/8,1200,Agricultural,Maksi,Berasia,Bhopal,Full Ownership";
     const blob = new Blob([headers + sample], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'land_records_sample.csv';
-    a.click();
+    a.href = url; a.download = 'land_records_sample.csv'; a.click();
   };
+
+  const tabButtonStyle = (isActive: boolean) => ({
+    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 12, fontSize: 14, fontWeight: 600, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    backgroundColor: isActive ? 'white' : 'transparent', color: isActive ? 'var(--blue-600)' : 'var(--slate-500)', boxShadow: isActive ? '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)' : 'none', border: 'none', cursor: 'pointer'
+  });
 
   return (
     <div className="animate-in" style={{ paddingBottom: 100 }}>
-      <div className="page-header" style={{ marginBottom: 30 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <div className="icon-box" style={{ background: 'linear-gradient(135deg, var(--blue-600), var(--indigo-600))', color: 'white', width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Boxes size={24} />
+      <div className="page-header" style={{ marginBottom: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+          <div className="icon-box" style={{ background: 'linear-gradient(135deg, var(--blue-600), var(--indigo-600))', color: 'white', width: 48, height: 48, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px rgba(37, 99, 235, 0.2)' }}>
+            <Boxes size={28} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>Bulk Operations</h1>
-            <p style={{ color: 'var(--slate-500)', margin: 0 }}>Ingest records via CSV or manage existing records in bulk</p>
+            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>Bulk Operations</h1>
+            <p style={{ color: 'var(--slate-500)', margin: 0, fontSize: 16 }}>Unified ingestion hub for CSV, JSON, PDF and Database sync</p>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--slate-100)', padding: 4, borderRadius: 12, width: 'fit-content' }}>
-        <button 
-          onClick={() => setActiveTab('ingestion')}
-          className={activeTab === 'ingestion' ? 'tab-active' : 'tab-inactive'}
-          style={tabButtonStyle(activeTab === 'ingestion')}
-        >
-          <Upload size={16} />
-          CSV Ingestion
+      {/* Modern Tab Bar */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 32, background: 'var(--slate-100)', padding: 6, borderRadius: 18, width: 'fit-content' }}>
+        <button onClick={() => { setActiveTab('csv'); resetIngestion(); }} style={tabButtonStyle(activeTab === 'csv')}>
+          <Upload size={18} /> CSV
         </button>
-        <button 
-          onClick={() => setActiveTab('selection')}
-          className={activeTab === 'selection' ? 'tab-active' : 'tab-inactive'}
-          style={tabButtonStyle(activeTab === 'selection')}
-        >
-          <Database size={16} />
-          Record Selection
+        <button onClick={() => { setActiveTab('json'); resetIngestion(); }} style={tabButtonStyle(activeTab === 'json')}>
+          <FileCode size={18} /> JSON
+        </button>
+        <button onClick={() => { setActiveTab('pdf'); resetIngestion(); }} style={tabButtonStyle(activeTab === 'pdf')}>
+          <Copy size={18} /> PDF / ZIP
+        </button>
+        <button onClick={() => { setActiveTab('db'); resetIngestion(); }} style={tabButtonStyle(activeTab === 'db')}>
+          <Database size={18} /> DB Sync
         </button>
       </div>
 
-      {activeTab === 'ingestion' ? (
+      <input type="file" ref={csvInputRef} onChange={handleFileUpload} accept=".csv" style={{ display: 'none' }} />
+      <input type="file" ref={jsonInputRef} onChange={handleJsonUpload} accept=".json" style={{ display: 'none' }} />
+      <input type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept=".pdf,.zip" style={{ display: 'none' }} />
+
+      {activeTab !== 'db' ? (
         <section className="animate-in">
           {ingestionStatus === 'idle' || ingestionStatus === 'error' ? (
             <div 
-              className="card" 
-              style={{ 
-                border: '2px dashed var(--slate-200)', 
-                background: 'var(--slate-50)', 
-                padding: '60px 40px', 
-                textAlign: 'center',
-                borderRadius: 20,
-                transition: 'all 0.3s ease',
-                cursor: 'pointer'
+              className="card upload-zone" 
+              style={{ border: '2px dashed var(--slate-200)', background: 'var(--slate-50)', padding: '80px 40px', textAlign: 'center', borderRadius: 24, cursor: 'pointer', transition: 'all 0.3s ease' }}
+              onClick={() => {
+                if(activeTab === 'csv') csvInputRef.current?.click();
+                if(activeTab === 'json') jsonInputRef.current?.click();
+                if(activeTab === 'pdf') pdfInputRef.current?.click();
               }}
-              onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--blue-500)'; e.currentTarget.style.background = 'var(--blue-50)'; }}
-              onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--slate-200)'; e.currentTarget.style.background = 'var(--slate-50)'; }}
-              onDrop={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--slate-200)'; e.currentTarget.style.background = 'var(--slate-50)'; /* Handle drop */ }}
-              onClick={() => fileInputRef.current?.click()}
             >
-              <div style={{ background: 'white', width: 64, height: 64, borderRadius: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 10px 20px rgba(0,0,0,0.05)' }}>
-                <Upload size={32} className="text-blue-600" />
+              <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
+                {activeTab === 'csv' && <Upload size={40} className="text-blue-600" />}
+                {activeTab === 'json' && <FileJson size={40} className="text-blue-600" />}
+                {activeTab === 'pdf' && <Copy size={40} className="text-blue-600" />}
               </div>
-              <h3 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Upload CSV File</h3>
-              <p style={{ color: 'var(--slate-500)', maxWidth: 400, margin: '0 auto 24px' }}>
-                Drag and drop your CSV file here, or click to browse. Ensure your CSV follows the required schema.
+              <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
+                {activeTab === 'csv' ? 'Upload Land CSV' : activeTab === 'json' ? 'Upload Records JSON' : 'Upload PDF or ZIP'}
+              </h3>
+              <p style={{ color: 'var(--slate-500)', maxWidth: 450, margin: '0 auto 32px', fontSize: 16, lineHeight: 1.6 }}>
+                {activeTab === 'csv' && 'Import multiple land records using a structured CSV file. Download the template for the correct format.'}
+                {activeTab === 'json' && 'Directly ingest JSON arrays. Perfect for system-to-system data migrations.'}
+                {activeTab === 'pdf' && 'Upload a single land certificate or a ZIP containing multiple files. AI-powered OCR will extract the data.'}
               </p>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                <button className="btn btn-primary">Choose File</button>
-                <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); downloadSampleCSV(); }}>
-                  <Download size={16} /> Download Template
-                </button>
+              <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+                <button className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16 }}>Browse Files</button>
+                {activeTab === 'csv' && (
+                  <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); downloadSampleCSV(); }} style={{ padding: '12px 24px' }}>
+                    <Download size={18} /> Template
+                  </button>
+                )}
               </div>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
-                accept=".csv" 
-                style={{ display: 'none' }} 
-              />
               {errorMessage && (
-                <div style={{ marginTop: 24, color: 'var(--error)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  <AlertCircle size={16} /> {errorMessage}
+                <div style={{ marginTop: 32, color: 'var(--error)', background: 'var(--red-50)', padding: '12px 24px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <AlertCircle size={18} /> {errorMessage}
                 </div>
               )}
             </div>
           ) : (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: 24, borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)' }}>
+            <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.08)' }}>
+              <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                    {ingestionStatus === 'uploading' ? 'Ingesting Records...' : 'Data Preview'}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: 14, color: 'var(--slate-500)' }}>
-                    {parsedData.length} records found in file
-                  </p>
+                  <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Data Preview</h3>
+                  <p style={{ margin: 0, fontSize: 14, color: 'var(--slate-500)' }}>{parsedData.length} records detected</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
-                  {ingestionStatus === 'ready' && (
-                    <>
-                      <button className="btn btn-outline" onClick={resetIngestion} disabled={ingestionStatus === 'uploading'}>Cancel</button>
-                      <button className="btn btn-primary" onClick={startIngestion}>
-                        <CheckCircle2 size={16} /> Start Ingestion
-                      </button>
-                    </>
-                  )}
-                  {ingestionStatus === 'completed' && (
-                    <button className="btn btn-primary" onClick={resetIngestion}>Done</button>
-                  )}
+                  <button className="btn btn-outline" onClick={resetIngestion} disabled={ingestionStatus === 'uploading'}>Reset</button>
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={startIngestion} 
+                    disabled={ingestionStatus === 'uploading' || ingestionStatus === 'completed'}
+                    style={{ minWidth: 160 }}
+                  >
+                    {ingestionStatus === 'uploading' ? (
+                      <><Loader2 size={18} className="animate-spin" /> Ingesting...</>
+                    ) : ingestionStatus === 'completed' ? (
+                      <><CheckCircle2 size={18} /> Completed</>
+                    ) : (
+                      'Start Ingestion'
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {ingestionStatus === 'uploading' && (
-                <div style={{ padding: '24px 32px', background: 'white' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
-                    <span style={{ fontWeight: 600 }}>Progress</span>
-                    <span style={{ color: 'var(--blue-600)', fontWeight: 700 }}>{progress}%</span>
-                  </div>
-                  <div style={{ height: 8, background: 'var(--slate-100)', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${progress}%`, background: 'var(--blue-600)', transition: 'width 0.3s ease' }}></div>
-                  </div>
+              {errorMessage && ingestionStatus === 'completed' && (
+                <div style={{ padding: '16px 32px', background: 'var(--red-50)', color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--red-100)' }}>
+                  <AlertCircle size={20} />
+                  <strong>Partial Success:</strong> {errorMessage}
                 </div>
               )}
 
-              <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+              <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ position: 'sticky', top: 0, background: 'var(--slate-50)', zIndex: 1 }}>
-                    <tr style={{ borderBottom: '1px solid var(--slate-100)' }}>
-                      {['Status', 'Record ID', 'Owner', 'Survey No', 'Area', 'Type', 'Village'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase' }}>{h}</th>
-                      ))}
+                  <thead>
+                    <tr style={{ background: 'var(--slate-50)', borderBottom: '1px solid var(--slate-100)' }}>
+                      <th style={{ padding: '16px 32px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner</th>
+                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Survey / Khasra</th>
+                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Village</th>
+                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Area</th>
                     </tr>
                   </thead>
                   <tbody>
                     {parsedData.map((row, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--slate-50)' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          {row.status === 'success' ? (
-                            <CheckCircle2 size={18} className="text-green-600" />
-                          ) : row.status === 'error' ? (
-                            <AlertCircle size={18} className="text-red-600" title={row.error} />
-                          ) : (
-                            <div style={{ width: 18, height: 18, borderRadius: 9, border: '2px solid var(--slate-200)' }}></div>
-                          )}
+                      <tr key={i} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.2s' }}>
+                        <td style={{ padding: '16px 32px' }}>
+                          <span className={`badge badge-${row.status === 'success' ? 'success' : row.status === 'error' ? 'error' : 'warning'}`} style={{ padding: '4px 12px', borderRadius: 8 }}>
+                            {row.status}
+                          </span>
                         </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600 }} className="mono">{row.record_id}</td>
-                        <td style={{ padding: '12px 16px' }}>{row.owner_name}</td>
-                        <td style={{ padding: '12px 16px' }}>{row.survey_no}</td>
-                        <td style={{ padding: '12px 16px' }}>{row.area_sq_m} sqm</td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span className="badge badge-info">{row.land_type}</span>
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>{row.village_name}</td>
+                        <td style={{ padding: '16px 16px', fontWeight: 600 }}>{row.owner_name}</td>
+                        <td style={{ padding: '16px 16px' }}>{row.survey_no} / {row.khasra_no}</td>
+                        <td style={{ padding: '16px 16px' }}>{row.village_name}</td>
+                        <td style={{ padding: '16px 16px' }}>{row.area_sq_m} sqm</td>
                       </tr>
                     ))}
                   </tbody>
@@ -342,194 +382,44 @@ export default function BulkOperationsPage() {
         </section>
       ) : (
         <section className="animate-in">
-          {/* Records Selection Section */}
-          <div className="card" style={{ padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, padding: '0 8px', color: 'var(--slate-400)' }}>
-              <Search size={16} />
-              <input 
-                className="input" 
-                placeholder="Filter existing records to select..." 
-                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                style={{ border: 'none', padding: '8px 0', boxShadow: 'none' }}
-              />
+          <div className="card" style={{ padding: 60, textAlign: 'center', borderRadius: 28, background: 'linear-gradient(to bottom, white, var(--slate-50))' }}>
+            <div style={{ background: 'var(--blue-50)', width: 100, height: 100, borderRadius: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 32px' }}>
+              <Database size={50} className="text-blue-600" />
             </div>
-            <button className="btn btn-outline" style={{ fontSize: 13, padding: '6px 12px' }}>
-              <Filter size={14} /> More Filters
-            </button>
-          </div>
-
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--slate-100)', background: 'var(--slate-50)' }}>
-                  <th style={{ width: 50, padding: '12px 16px' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={selectedIds.size === records.length && records.length > 0} 
-                      onChange={toggleSelectAll}
-                    />
-                  </th>
-                  {['Record ID', 'Owner', 'Village', 'Area', 'Type', 'Status', ''].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {recordsLoading ? (
-                  <tr>
-                    <td colSpan={8} style={{ padding: 40, textAlign: 'center' }}>
-                      <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto 12px', color: 'var(--blue-600)' }} />
-                      Loading records...
-                    </td>
-                  </tr>
-                ) : records.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center' }}>No records found</td></tr>
-                ) : (
-                  records.map(r => (
-                    <tr 
-                      key={r.record_id} 
-                      style={{ 
-                        borderBottom: '1px solid var(--slate-50)', 
-                        background: selectedIds.has(r.record_id) ? 'var(--blue-50)' : 'transparent',
-                        transition: 'background 0.2s'
-                      }}
-                      onClick={() => toggleSelect(r.record_id)}
-                    >
-                      <td style={{ padding: '14px 16px' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={selectedIds.has(r.record_id)} 
-                          onChange={() => {}} // Handled by tr onClick
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                      <td style={{ padding: '14px 16px' }} className="mono">{r.record_id}</td>
-                      <td style={{ padding: '14px 16px', fontWeight: 500 }}>{r.owner_name}</td>
-                      <td style={{ padding: '14px 16px' }}>{r.village_name}</td>
-                      <td style={{ padding: '14px 16px' }}>{r.area_sq_m} sqm</td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <span className={`badge ${r.land_type === 'Agricultural' ? 'badge-success' : 'badge-info'}`}>{r.land_type}</span>
-                      </td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <span className="badge">{r.status}</span>
-                      </td>
-                      <td style={{ padding: '14px 16px' }}>
-                        <Link href={`/land/${r.record_id}`} style={{ color: 'var(--blue-600)' }} onClick={e => e.stopPropagation()}>
-                          <ChevronRight size={18} />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <h3 style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}>Database Direct Sync</h3>
+            <p style={{ color: 'var(--slate-500)', maxWidth: 500, margin: '0 auto 40px', fontSize: 18, lineHeight: 1.6 }}>
+              Connect directly to your legacy SQL database to automate the migration of land records to the blockchain.
+            </p>
+            
+            <div style={{ maxWidth: 450, margin: '0 auto', textAlign: 'left', background: 'white', padding: 32, borderRadius: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid var(--slate-100)' }}>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Connection URL</label>
+                <input type="text" className="input" placeholder="postgres://user:pass@host:5432/dbname" style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }} />
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Source Table</label>
+                <input type="text" className="input" placeholder="e.g. land_records_master" style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }} />
+              </div>
+              <button className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: 16, borderRadius: 12 }}>
+                <Search size={20} /> Test Connection & Map Fields
+              </button>
+            </div>
           </div>
         </section>
       )}
 
-      {/* Floating Action Bar for Selections */}
-      {selectedIds.size > 0 && (
-        <div 
-          className="animate-slide-up"
-          style={{ 
-            position: 'fixed', 
-            bottom: 30, 
-            left: '50%', 
-            transform: 'translateX(-50%)', 
-            background: 'rgba(30, 41, 59, 0.9)', 
-            backdropFilter: 'blur(12px)',
-            color: 'white',
-            padding: '12px 24px',
-            borderRadius: '100px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 24,
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            zIndex: 100,
-            border: '1px solid rgba(255,255,255,0.1)'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ background: 'var(--blue-600)', width: 32, height: 32, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>
-              {selectedIds.size}
-            </div>
-            <span style={{ fontSize: 15, fontWeight: 500 }}>Records Selected</span>
-          </div>
-          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.1)' }}></div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button onClick={() => handleBulkAction('batch')} className="bulk-btn" style={bulkBtnStyle('var(--blue-600)')}>
-              <Boxes size={16} /> Batch & Anchor
-            </button>
-            <button onClick={() => handleBulkAction('export')} className="bulk-btn" style={bulkBtnStyle('transparent', 'rgba(255,255,255,0.2)')}>
-              <Download size={16} /> Export JSON
-            </button>
-            <button onClick={() => setSelectedIds(new Set())} className="bulk-btn" style={bulkBtnStyle('transparent', 'transparent')}>
-              <Trash2 size={16} /> Clear
-            </button>
-          </div>
-        </div>
-      )}
-
       <style jsx>{`
-        .tab-active {
-          background: white;
+        .upload-zone:hover {
+          border-color: var(--blue-400) !important;
+          background: white !important;
+          transform: translateY(-4px);
+          box-shadow: 0 20px 40px rgba(0,0,0,0.04);
+        }
+        .badge-info {
+          background: var(--blue-50);
           color: var(--blue-700);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        }
-        .tab-inactive {
-          color: var(--slate-500);
-        }
-        .tab-inactive:hover {
-          color: var(--slate-700);
-        }
-        .bulk-btn {
-          display: flex;
-          align-items: center;
-          gap: 8;
-          padding: 8px 16px;
-          border-radius: 50px;
-          font-size: 14px;
-          font-weight: 600;
-          transition: all 0.2s;
-          border: 1px solid transparent;
-          cursor: pointer;
-        }
-        .bulk-btn:hover {
-          transform: translateY(-2px);
-          filter: brightness(1.1);
         }
       `}</style>
     </div>
   );
-}
-
-function tabButtonStyle(isActive: boolean): React.CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '8px 20px',
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    border: 'none',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  };
-}
-
-function bulkBtnStyle(bg: string, border: string = 'transparent'): React.CSSProperties {
-  return {
-    background: bg,
-    border: `1px solid ${border}`,
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '8px 16px',
-    borderRadius: 50,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer'
-  };
 }
