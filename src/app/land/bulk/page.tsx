@@ -54,6 +54,10 @@ export default function BulkOperationsPage() {
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
+  // DB Sync State
+  const [dbUrl, setDbUrl] = useState('postgresql://postgres:postgres@localhost:5434/jadeledger');
+  const [dbLimit, setDbLimit] = useState(100);
+  
   // Modal State
   const [selectedRecord, setSelectedRecord] = useState<ParsedRecord | null>(null);
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -135,9 +139,9 @@ export default function BulkOperationsPage() {
           area_sq_m: r.area || 0,
           land_type: r.land_type || 'JSON Record',
           village_name: r.village_name || '-',
-          tehsil_name: r.tehsil_name || '-',
-          district_name: r.district_name || '-',
-          ownership_type: r.ownership_type || 'N/A',
+          tehsil_name: r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
+          district_name: r.district_name || r.district || '-',
+          ownership_type: r.ownership_type || r.ownership || r.ownershiptype || 'Full Ownership',
           status: 'pending'
         }));
         setParsedData(data);
@@ -163,6 +167,60 @@ export default function BulkOperationsPage() {
     }]);
   };
 
+  const handleDbSync = async () => {
+    if (!dbUrl) {
+      setErrorMessage("Connection URL is required");
+      return;
+    }
+    
+    setIngestionStatus('parsing');
+    setErrorMessage(null);
+    
+    try {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/db-sync`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Role': localStorage.getItem('jade_role') || 'Admin'
+        },
+        body: JSON.stringify({
+          connection_url: dbUrl,
+          limit: dbLimit
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      }
+      
+      const result = await response.json();
+      if (result.ok && Array.isArray(result.rows)) {
+        const data: ParsedRecord[] = result.rows.map((r: any) => ({
+          record_id: r.record_id || `DB-${Math.floor(Math.random() * 1000)}`,
+          owner_name: r.owner_name || 'N/A',
+          owner_id: r.owner_id || 'N/A',
+          survey_no: r.survey_no || '-',
+          khasra_no: r.khasra_no || '-',
+          area_sq_m: parseFloat(r.area) || 0,
+          land_type: r.land_type || 'DB Record',
+          village_name: r.village_name || '-',
+          tehsil_name: r.tehsil_name || '-',
+          district_name: r.district_name || '-',
+          ownership_type: r.ownership_type || 'N/A',
+          status: 'pending'
+        }));
+        setParsedData(data);
+        setIngestionStatus('ready');
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'DB Sync failed');
+      setIngestionStatus('error');
+    }
+  };
+
   const startIngestion = async () => {
     if (parsedData.length === 0) return;
     
@@ -183,19 +241,33 @@ export default function BulkOperationsPage() {
       } else if (activeTab === 'pdf') {
         file = pdfInputRef.current?.files?.[0] || null;
         endpoint = '/api/ingest/pdf-ingest';
+      } else if (activeTab === 'db') {
+        endpoint = '/api/ingest/bulk';
       }
 
-      if (!file) throw new Error("No file selected");
+      if (!file && activeTab !== 'db') throw new Error("No file selected");
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('batch_id', `BATCH-${Date.now()}`);
+      let response;
+      if (activeTab === 'db') {
+        response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Role': localStorage.getItem('jade_role') || 'Admin' 
+          },
+          body: JSON.stringify(parsedData)
+        });
+      } else {
+        const formData = new FormData();
+        if (file) formData.append('file', file);
+        formData.append('batch_id', `BATCH-${Date.now()}`);
 
-      const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        body: formData,
-        headers: { 'X-User-Role': localStorage.getItem('jade_role') || 'Admin' }
-      });
+        response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          body: formData,
+          headers: { 'X-User-Role': localStorage.getItem('jade_role') || 'Admin' }
+        });
+      }
 
       if (!response.ok) throw new Error(`Server responded with ${response.status}`);
       const result = await response.json();
@@ -397,47 +469,101 @@ export default function BulkOperationsPage() {
       <input type="file" ref={jsonInputRef} onChange={handleJsonUpload} accept=".json" style={{ display: 'none' }} />
       <input type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept=".pdf,.zip" style={{ display: 'none' }} />
 
-      {activeTab !== 'db' ? (
-        <section className="animate-in">
-          {ingestionStatus === 'idle' || ingestionStatus === 'error' ? (
-            <div
-              className="card upload-zone"
-              style={{ border: '2px dashed var(--slate-200)', background: 'var(--slate-50)', padding: '80px 40px', textAlign: 'center', borderRadius: 24, cursor: 'pointer', transition: 'all 0.3s ease' }}
-              onClick={() => {
-                if(activeTab === 'csv') csvInputRef.current?.click();
-                if(activeTab === 'json') jsonInputRef.current?.click();
-                if(activeTab === 'pdf') pdfInputRef.current?.click();
-              }}
-            >
-              <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
-                {activeTab === 'csv' && <Upload size={40} className="text-blue-600" />}
-                {activeTab === 'json' && <FileJson size={40} className="text-blue-600" />}
-                {activeTab === 'pdf' && <Copy size={40} className="text-blue-600" />}
+      {(ingestionStatus === 'idle' || ingestionStatus === 'error') ? (
+        activeTab === 'db' ? (
+          <section className="animate-in">
+            <div className="card" style={{ padding: 60, textAlign: 'center', borderRadius: 28, background: 'linear-gradient(to bottom, white, var(--slate-50))' }}>
+              <div style={{ background: 'var(--blue-50)', width: 100, height: 100, borderRadius: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 32px' }}>
+                <Database size={50} className="text-blue-600" />
               </div>
-              <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
-                {activeTab === 'csv' ? 'Upload Land CSV' : activeTab === 'json' ? 'Upload Records JSON' : 'Upload PDF or ZIP'}
-              </h3>
-              <p style={{ color: 'var(--slate-500)', maxWidth: 450, margin: '0 auto 32px', fontSize: 16, lineHeight: 1.6 }}>
-                {activeTab === 'csv' && 'Import multiple land records using a structured CSV file. Download the template for the correct format.'}
-                {activeTab === 'json' && 'Directly ingest JSON arrays. Perfect for system-to-system data migrations.'}
-                {activeTab === 'pdf' && 'Upload a single land certificate or a ZIP containing multiple files. AI-powered OCR will extract the data.'}
+              <h3 style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}>Database Direct Sync</h3>
+              <p style={{ color: 'var(--slate-500)', maxWidth: 500, margin: '0 auto 40px', fontSize: 18, lineHeight: 1.6 }}>
+                Connect directly to your legacy SQL database to automate the migration of land records to the blockchain.
               </p>
-              <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-                <button className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16 }}>Browse Files</button>
-                {activeTab === 'csv' && (
-                  <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); downloadSampleCSV(); }} style={{ padding: '12px 24px' }}>
-                    <Download size={18} /> Template
-                  </button>
+
+              <div style={{ maxWidth: 450, margin: '0 auto', textAlign: 'left', background: 'white', padding: 32, borderRadius: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid var(--slate-100)' }}>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Connection URL</label>
+                  <input 
+                    type="text" 
+                    className="input" 
+                    placeholder="postgresql://postgres:postgres@localhost:5434/jadeledger" 
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }}
+                    value={dbUrl}
+                    onChange={(e) => setDbUrl(e.target.value)}
+                  />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>No. of Rows</label>
+                  <input 
+                    type="number" 
+                    className="input" 
+                    placeholder="e.g. 100" 
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }}
+                    value={dbLimit}
+                    onChange={(e) => setDbLimit(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', padding: '14px', fontSize: 16, borderRadius: 12 }}
+                  onClick={handleDbSync}
+                  disabled={ingestionStatus === 'parsing'}
+                >
+                  {ingestionStatus === 'parsing' ? (
+                    <><Loader2 size={20} className="animate-spin" /> Connecting...</>
+                  ) : (
+                    <><Search size={20} /> Test Connection & Map Fields</>
+                  )}
+                </button>
+                {errorMessage && (
+                  <div style={{ marginTop: 24, color: 'var(--error)', background: 'var(--red-50)', padding: '12px', borderRadius: 12, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={16} /> {errorMessage}
+                  </div>
                 )}
               </div>
-              {errorMessage && (
-                <div style={{ marginTop: 32, color: 'var(--error)', background: 'var(--red-50)', padding: '12px 24px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <AlertCircle size={18} /> {errorMessage}
-                </div>
+            </div>
+          </section>
+        ) : (
+          <div
+            className="card upload-zone"
+            style={{ border: '2px dashed var(--slate-200)', background: 'var(--slate-50)', padding: '80px 40px', textAlign: 'center', borderRadius: 24, cursor: 'pointer', transition: 'all 0.3s ease' }}
+            onClick={() => {
+              if(activeTab === 'csv') csvInputRef.current?.click();
+              if(activeTab === 'json') jsonInputRef.current?.click();
+              if(activeTab === 'pdf') pdfInputRef.current?.click();
+            }}
+          >
+            <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
+              {activeTab === 'csv' && <Upload size={40} className="text-blue-600" />}
+              {activeTab === 'json' && <FileJson size={40} className="text-blue-600" />}
+              {activeTab === 'pdf' && <Copy size={40} className="text-blue-600" />}
+            </div>
+            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
+              {activeTab === 'csv' ? 'Upload Land CSV' : activeTab === 'json' ? 'Upload Records JSON' : 'Upload PDF or ZIP'}
+            </h3>
+            <p style={{ color: 'var(--slate-500)', maxWidth: 450, margin: '0 auto 32px', fontSize: 16, lineHeight: 1.6 }}>
+              {activeTab === 'csv' && 'Import multiple land records using a structured CSV file. Download the template for the correct format.'}
+              {activeTab === 'json' && 'Directly ingest JSON arrays. Perfect for system-to-system data migrations.'}
+              {activeTab === 'pdf' && 'Upload a single land certificate or a ZIP containing multiple files. AI-powered OCR will extract the data.'}
+            </p>
+            <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+              <button className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16 }}>Browse Files</button>
+              {activeTab === 'csv' && (
+                <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); downloadSampleCSV(); }} style={{ padding: '12px 24px' }}>
+                  <Download size={18} /> Template
+                </button>
               )}
             </div>
-          ) : (
-            <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.08)' }}>
+            {errorMessage && (
+              <div style={{ marginTop: 32, color: 'var(--error)', background: 'var(--red-50)', padding: '12px 24px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={18} /> {errorMessage}
+              </div>
+            )}
+          </div>
+        )
+      ) : (
+        <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: 24, boxShadow: '0 20px 50px rgba(0,0,0,0.08)' }}>
               <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Data Preview</h3>
@@ -535,34 +661,6 @@ export default function BulkOperationsPage() {
               </div>
             </div>
           )}
-        </section>
-      ) : (
-        <section className="animate-in">
-          <div className="card" style={{ padding: 60, textAlign: 'center', borderRadius: 28, background: 'linear-gradient(to bottom, white, var(--slate-50))' }}>
-            <div style={{ background: 'var(--blue-50)', width: 100, height: 100, borderRadius: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 32px' }}>
-              <Database size={50} className="text-blue-600" />
-            </div>
-            <h3 style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}>Database Direct Sync</h3>
-            <p style={{ color: 'var(--slate-500)', maxWidth: 500, margin: '0 auto 40px', fontSize: 18, lineHeight: 1.6 }}>
-              Connect directly to your legacy SQL database to automate the migration of land records to the blockchain.
-            </p>
-
-            <div style={{ maxWidth: 450, margin: '0 auto', textAlign: 'left', background: 'white', padding: 32, borderRadius: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid var(--slate-100)' }}>
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Connection URL</label>
-                <input type="text" className="input" placeholder="postgres://user:pass@host:5432/dbname" style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }} />
-              </div>
-              <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Source Table</label>
-                <input type="text" className="input" placeholder="e.g. land_records_master" style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }} />
-              </div>
-              <button className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: 16, borderRadius: 12 }}>
-                <Search size={20} /> Test Connection & Map Fields
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Record Preview Modal */}
       {showRecordModal && selectedRecord && (
