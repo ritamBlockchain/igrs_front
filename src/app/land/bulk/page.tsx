@@ -15,14 +15,16 @@ import {
   Copy,
   Download,
   Boxes,
-  Zip,
   FileJson,
-  FileCode
+  FileCode,
+  Eye,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import { useData } from "@/context/DataContext";
 import api, { LandRecord } from "@/lib/api";
 import CONFIG from "@/lib/config";
+import jsPDF from "jspdf";
 
 type IngestionStatus = 'idle' | 'parsing' | 'ready' | 'uploading' | 'completed' | 'error';
 
@@ -51,6 +53,11 @@ export default function BulkOperationsPage() {
   const [parsedData, setParsedData] = useState<ParsedRecord[]>([]);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // Modal State
+  const [selectedRecord, setSelectedRecord] = useState<ParsedRecord | null>(null);
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   
   // Refs for different file types
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -231,11 +238,124 @@ export default function BulkOperationsPage() {
 
   const downloadSampleCSV = () => {
     const headers = "record_id,owner_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type";
-    const sample = "\nMP-BHO-2026001,Rajesh Kumar,UID-9988,S-45,288/8,1200,Agricultural,Maksi,Berasia,Bhopal,Full Ownership";
-    const blob = new Blob([headers + sample], { type: 'text/csv' });
+    const sample1 = "\nMP-BHO-2026001,Rajesh Kumar,UID-9988,S-45,288/8,1200,Agricultural,Maksi,Berasia,Bhopal,Full Ownership";
+    const sample2 = "\nMP-BHO-2026002,Priya Singh,UID-9989,S-46,289/1,2500,Residential,Maksi,Berasia,Bhopal,Joint Ownership";
+    const sample3 = "\nMP-BHO-2026003,Amit Sharma,UID-9990,S-47,290/3,1800,Commercial,Maksi,Berasia,Bhopal,Leasehold";
+    const blob = new Blob([headers + sample1 + sample2 + sample3], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'land_records_sample.csv'; a.click();
+  };
+
+  const openPreviewModal = (record: ParsedRecord) => {
+    setSelectedRecord(record);
+    setShowRecordModal(true);
+  };
+
+  const openTemplateModal = () => {
+    setShowTemplateModal(true);
+  };
+
+  const closeModal = () => {
+    setShowRecordModal(false);
+    setShowTemplateModal(false);
+    setSelectedRecord(null);
+  };
+
+  const downloadRecordAsPDF = (record: ParsedRecord) => {
+    const doc = new jsPDF();
+    
+    // Title
+    doc.setFontSize(20);
+    doc.setTextColor(37, 99, 235);
+    doc.text('Land Record Certificate', 105, 20, { align: 'center' });
+    
+    // Record ID and Status
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Record ID: ${record.record_id}`, 20, 35);
+    doc.text(`Status: ${record.status.toUpperCase()}`, 140, 35);
+    
+    // Line separator
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.line(20, 42, 190, 42);
+    
+    // Table configuration
+    const tableStartY = 55;
+    const rowHeight = 12;
+    const col1Width = 70;
+    const col2Width = 100;
+    const tableWidth = col1Width + col2Width;
+    const tableX = 20;
+    
+    // Table header
+    doc.setFillColor(37, 99, 235);
+    doc.rect(tableX, tableStartY, tableWidth, rowHeight, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Field', tableX + 10, tableStartY + 8);
+    doc.text('Value', tableX + col1Width + 10, tableStartY + 8);
+    
+    // Table data
+    const fields = [
+      { label: 'Owner Name', value: record.owner_name },
+      { label: 'Owner ID', value: record.owner_id },
+      { label: 'Survey Number', value: record.survey_no },
+      { label: 'Khasra Number', value: record.khasra_no },
+      { label: 'Area (sqm)', value: record.area_sq_m.toString() },
+      { label: 'Land Type', value: record.land_type },
+      { label: 'Village', value: record.village_name },
+      { label: 'Tehsil', value: record.tehsil_name },
+      { label: 'District', value: record.district_name },
+      { label: 'Ownership Type', value: record.ownership_type },
+    ];
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    
+    fields.forEach((field, index) => {
+      const yPos = tableStartY + rowHeight + (index * rowHeight);
+      
+      // Alternate row background
+      if (index % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(tableX, yPos, tableWidth, rowHeight, 'F');
+      }
+      
+      // Draw row border
+      doc.setDrawColor(229, 231, 235);
+      doc.setLineWidth(0.1);
+      doc.rect(tableX, yPos, tableWidth, rowHeight);
+      
+      // Field label (bold)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(field.label, tableX + 10, yPos + 8);
+      
+      // Field value
+      doc.setFont('helvetica', 'normal');
+      doc.text(field.value, tableX + col1Width + 10, yPos + 8);
+    });
+    
+    // Error if present
+    if (record.error) {
+      const errorY = tableStartY + rowHeight + (fields.length * rowHeight) + 10;
+      doc.setFillColor(254, 226, 226);
+      doc.rect(tableX, errorY, tableWidth, rowHeight + 5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(220, 38, 38);
+      doc.text('Error: ' + record.error, tableX + 10, errorY + 10);
+    }
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.setTextColor(128, 128, 128);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, 280, { align: 'center' });
+    
+    doc.save(`record_${record.record_id}.pdf`);
   };
 
   const tabButtonStyle = (isActive: boolean) => ({
@@ -280,8 +400,8 @@ export default function BulkOperationsPage() {
       {activeTab !== 'db' ? (
         <section className="animate-in">
           {ingestionStatus === 'idle' || ingestionStatus === 'error' ? (
-            <div 
-              className="card upload-zone" 
+            <div
+              className="card upload-zone"
               style={{ border: '2px dashed var(--slate-200)', background: 'var(--slate-50)', padding: '80px 40px', textAlign: 'center', borderRadius: 24, cursor: 'pointer', transition: 'all 0.3s ease' }}
               onClick={() => {
                 if(activeTab === 'csv') csvInputRef.current?.click();
@@ -324,10 +444,13 @@ export default function BulkOperationsPage() {
                   <p style={{ margin: 0, fontSize: 14, color: 'var(--slate-500)' }}>{parsedData.length} records detected</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
+                  <button className="btn btn-outline" onClick={openTemplateModal} style={{ padding: '10px 20px' }}>
+                    <Eye size={16} style={{ marginRight: 8 }} /> View Template
+                  </button>
                   <button className="btn btn-outline" onClick={resetIngestion} disabled={ingestionStatus === 'uploading'}>Reset</button>
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={startIngestion} 
+                  <button
+                    className="btn btn-primary"
+                    onClick={startIngestion}
                     disabled={ingestionStatus === 'uploading' || ingestionStatus === 'completed'}
                     style={{ minWidth: 160 }}
                   >
@@ -350,28 +473,61 @@ export default function BulkOperationsPage() {
               )}
 
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
                   <thead>
                     <tr style={{ background: 'var(--slate-50)', borderBottom: '1px solid var(--slate-100)' }}>
-                      <th style={{ padding: '16px 32px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
-                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner</th>
-                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Survey / Khasra</th>
-                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Village</th>
-                      <th style={{ padding: '16px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Area</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Record ID</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner ID</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Survey / Khasra</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Area (sqm)</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Land Type</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Village</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tehsil</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>District</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ownership</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {parsedData.map((row, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.2s' }}>
-                        <td style={{ padding: '16px 32px' }}>
+                        <td style={{ padding: '16px 20px' }}>
                           <span className={`badge badge-${row.status === 'success' ? 'success' : row.status === 'error' ? 'error' : 'warning'}`} style={{ padding: '4px 12px', borderRadius: 8 }}>
                             {row.status}
                           </span>
                         </td>
-                        <td style={{ padding: '16px 16px', fontWeight: 600 }}>{row.owner_name}</td>
-                        <td style={{ padding: '16px 16px' }}>{row.survey_no} / {row.khasra_no}</td>
-                        <td style={{ padding: '16px 16px' }}>{row.village_name}</td>
-                        <td style={{ padding: '16px 16px' }}>{row.area_sq_m} sqm</td>
+                        <td style={{ padding: '16px 20px', fontWeight: 600, fontSize: 13 }}>{row.record_id}</td>
+                        <td style={{ padding: '16px 20px', fontWeight: 500 }}>{row.owner_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.owner_id}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.survey_no} / {row.khasra_no}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.area_sq_m}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.land_type}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.village_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.tehsil_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.district_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.ownership_type}</td>
+                        <td style={{ padding: '16px 20px' }}>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={() => openPreviewModal(row)}
+                              className="btn btn-outline"
+                              style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                              title="Preview Full Details"
+                            >
+                              <Eye size={14} /> Preview
+                            </button>
+                            <button
+                              onClick={() => downloadRecordAsPDF(row)}
+                              className="btn btn-outline"
+                              style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                              title="Download as PDF"
+                            >
+                              <Download size={14} /> PDF
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -390,7 +546,7 @@ export default function BulkOperationsPage() {
             <p style={{ color: 'var(--slate-500)', maxWidth: 500, margin: '0 auto 40px', fontSize: 18, lineHeight: 1.6 }}>
               Connect directly to your legacy SQL database to automate the migration of land records to the blockchain.
             </p>
-            
+
             <div style={{ maxWidth: 450, margin: '0 auto', textAlign: 'left', background: 'white', padding: 32, borderRadius: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid var(--slate-100)' }}>
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--slate-700)' }}>Connection URL</label>
@@ -406,6 +562,237 @@ export default function BulkOperationsPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* Record Preview Modal */}
+      {showRecordModal && selectedRecord && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 20, maxWidth: 800, width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Record Details</h3>
+                <p style={{ margin: 0, fontSize: 14, color: 'var(--slate-500)' }}>Full preview of {selectedRecord.record_id}</p>
+              </div>
+              <button onClick={closeModal} className="btn btn-outline" style={{ padding: '8px 16px', borderRadius: 8 }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: 32 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24 }}>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Record ID</label>
+                  <p style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{selectedRecord.record_id}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Status</label>
+                  <span className={`badge badge-${selectedRecord.status === 'success' ? 'success' : selectedRecord.status === 'error' ? 'error' : 'warning'}`} style={{ padding: '4px 12px', borderRadius: 8 }}>
+                    {selectedRecord.status}
+                  </span>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Owner Name</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.owner_name}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Owner ID</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.owner_id}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Survey Number</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.survey_no}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Khasra Number</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.khasra_no}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Area (sqm)</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.area_sq_m}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Land Type</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.land_type}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Village</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.village_name}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Tehsil</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.tehsil_name}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>District</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.district_name}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Ownership Type</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.ownership_type}</p>
+                </div>
+              </div>
+              {selectedRecord.error && (
+                <div style={{ background: 'var(--red-50)', padding: 16, borderRadius: 12, marginBottom: 24 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--error)', textTransform: 'uppercase', marginBottom: 4 }}>Error</label>
+                  <p style={{ margin: 0, fontSize: 14, color: 'var(--error)' }}>{selectedRecord.error}</p>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => downloadRecordAsPDF(selectedRecord)}
+                  className="btn btn-primary"
+                  style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Download size={18} /> Download as PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Preview Modal - Moved outside conditional */}
+      {showTemplateModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 20 }}>
+          <div style={{ background: 'white', borderRadius: 20, maxWidth: 900, width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>CSV Template Preview</h3>
+                <p style={{ margin: 0, fontSize: 14, color: 'var(--slate-500)' }}>All required fields for bulk upload</p>
+              </div>
+              <button onClick={closeModal} className="btn btn-outline" style={{ padding: '8px 16px', borderRadius: 8 }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: 32 }}>
+              <div style={{ background: 'var(--blue-50)', padding: 16, borderRadius: 12, marginBottom: 24 }}>
+                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>CSV Format</h4>
+                <code style={{ display: 'block', background: 'white', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', border: '1px solid var(--blue-100)' }}>
+                  record_id,owner_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type
+                </code>
+              </div>
+
+              <h4 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600 }}>Field Descriptions</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24 }}>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>record_id</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Unique identifier for the land record (e.g., MP-BHO-2026001)</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>owner_name</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Full name of the land owner</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>owner_id</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Government ID or UID of the owner</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>survey_no</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Survey number of the land parcel</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>khasra_no</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Khasra number of the land parcel</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>area</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Area of land in square meters</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>land_type</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Type of land (Agricultural, Residential, Commercial)</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>village_name</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Name of the village</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>tehsil_name</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Name of the tehsil/taluka</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>district_name</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Name of the district</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>ownership_type</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Type of ownership (Full Ownership, Joint Ownership, Leasehold)</p>
+                </div>
+              </div>
+
+              <h4 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600 }}>Sample Data</h4>
+              <div style={{ background: 'white', border: '1px solid var(--slate-200)', borderRadius: 12, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--slate-100)' }}>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>record_id</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>owner_name</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>owner_id</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>survey_no</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>khasra_no</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>area</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>land_type</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>village</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>tehsil</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>district</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>ownership</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid var(--slate-100)' }}>
+                      <td style={{ padding: 10 }}>MP-BHO-2026001</td>
+                      <td style={{ padding: 10 }}>Rajesh Kumar</td>
+                      <td style={{ padding: 10 }}>UID-9988</td>
+                      <td style={{ padding: 10 }}>S-45</td>
+                      <td style={{ padding: 10 }}>288/8</td>
+                      <td style={{ padding: 10 }}>1200</td>
+                      <td style={{ padding: 10 }}>Agricultural</td>
+                      <td style={{ padding: 10 }}>Maksi</td>
+                      <td style={{ padding: 10 }}>Berasia</td>
+                      <td style={{ padding: 10 }}>Bhopal</td>
+                      <td style={{ padding: 10 }}>Full Ownership</td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--slate-100)', background: 'var(--slate-50)' }}>
+                      <td style={{ padding: 10 }}>MP-BHO-2026002</td>
+                      <td style={{ padding: 10 }}>Priya Singh</td>
+                      <td style={{ padding: 10 }}>UID-9989</td>
+                      <td style={{ padding: 10 }}>S-46</td>
+                      <td style={{ padding: 10 }}>289/1</td>
+                      <td style={{ padding: 10 }}>2500</td>
+                      <td style={{ padding: 10 }}>Residential</td>
+                      <td style={{ padding: 10 }}>Maksi</td>
+                      <td style={{ padding: 10 }}>Berasia</td>
+                      <td style={{ padding: 10 }}>Bhopal</td>
+                      <td style={{ padding: 10 }}>Joint Ownership</td>
+                    </tr>
+                    <tr>
+                      <td style={{ padding: 10 }}>MP-BHO-2026003</td>
+                      <td style={{ padding: 10 }}>Amit Sharma</td>
+                      <td style={{ padding: 10 }}>UID-9990</td>
+                      <td style={{ padding: 10 }}>S-47</td>
+                      <td style={{ padding: 10 }}>290/3</td>
+                      <td style={{ padding: 10 }}>1800</td>
+                      <td style={{ padding: 10 }}>Commercial</td>
+                      <td style={{ padding: 10 }}>Maksi</td>
+                      <td style={{ padding: 10 }}>Berasia</td>
+                      <td style={{ padding: 10 }}>Bhopal</td>
+                      <td style={{ padding: 10 }}>Leasehold</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
+                <button
+                  onClick={downloadSampleCSV}
+                  className="btn btn-primary"
+                  style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Download size={18} /> Download Template
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <style jsx>{`
