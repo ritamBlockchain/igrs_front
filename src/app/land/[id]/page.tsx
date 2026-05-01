@@ -2,8 +2,9 @@
 
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Shield, MapPin, User, Clock, Hash, CheckCircle, FileText, History, AlertTriangle, RefreshCw } from "lucide-react";
+import { Shield, MapPin, User, Clock, Hash, CheckCircle, FileText, History, AlertTriangle, RefreshCw, Upload, X, FileImage, File } from "lucide-react";
 import { api } from "@/lib/api";
+import { keccak256 } from "ethers";
 import { useRole } from "@/context/RoleContext";
 import { LandLineageTree } from "@/components/LandLineageTree";
 import CONFIG from "@/lib/config";
@@ -25,6 +26,13 @@ export default function LandDetailPage() {
   const [verifyHash, setVerifyHash] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{success: boolean, message: string, data?: any} | null>(null);
+  
+  // File upload state
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [extractedText, setExtractedText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
   // Set Owner state
   const [ownerName, setOwnerName] = useState('');
@@ -103,6 +111,101 @@ export default function LandDetailPage() {
     } finally {
       setVerifying(false);
     }
+  };
+
+  // Keccak256 hash generation function
+  const generateKeccak256Hash = async (text: string): Promise<string> => {
+    return keccak256(text);
+  };
+
+  // OCR extraction placeholder function
+  const extractTextFromOCR = async (file: File): Promise<string> => {
+    // This is a placeholder - will be replaced with actual OCR implementation
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // Placeholder: return file content as text
+        // In production, this would call the OCR API
+        resolve(`OCR extracted text from ${file.name} - Implementation pending`);
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  // Handle file selection
+  const handleFileSelect = async (file: File) => {
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      setVerifyResult({ success: false, message: 'Please upload a PDF or image file (JPEG, PNG)' });
+      return;
+    }
+
+    setUploadedFile(file);
+    setIsProcessing(true);
+    setVerifyResult(null);
+
+    try {
+      // Extract text from OCR (placeholder)
+      const text = await extractTextFromOCR(file);
+      setExtractedText(text);
+
+      // Generate keccak256 hash
+      const hash = await generateKeccak256Hash(text);
+      setVerifyHash(hash);
+
+      setVerifyResult({ 
+        success: true, 
+        message: `File processed successfully. Hash generated from OCR extracted content.` 
+      });
+    } catch (err) {
+      setVerifyResult({ 
+        success: false, 
+        message: err instanceof Error ? err.message : 'Failed to process file' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const handleBrowseClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,image/jpeg,image/png,image/jpg';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        handleFileSelect(file);
+      }
+    };
+    input.click();
+  };
+
+  const clearFile = () => {
+    setUploadedFile(null);
+    setExtractedText('');
+    setVerifyHash('');
+    setVerifyResult(null);
   };
 
   // Fetch record data
@@ -391,23 +494,91 @@ export default function LandDetailPage() {
 
       {/* Verify Tab */}
       {tab === 'verify' && (
-        <div className="card" style={{ padding: 28, maxWidth: 600 }}>
+        <div className="card" style={{ padding: 28, maxWidth: 700 }}>
           <h3 style={{ marginBottom: 20 }}>Verify Land Record</h3>
           <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 20 }}>
-            Enter the document hash to verify against the on-chain record. This is a public verification function.
+            Upload a PDF or image document to verify against the on-chain record. The system will extract content via OCR and generate a keccak256 hash for verification.
           </p>
-          <label className="label">Input Document Hash (SHA-256)</label>
-          <input 
-            className="input mono" 
-            placeholder="Enter 64-character hex hash to verify..." 
-            style={{ marginBottom: 16 }} 
-            value={verifyHash}
-            onChange={(e) => setVerifyHash(e.target.value)}
-          />
+
+          {/* File Upload Zone */}
+          {!uploadedFile ? (
+            <div
+              style={{
+                border: `2px dashed ${isDragging ? 'var(--blue-400)' : 'var(--slate-200)'}`,
+                background: isDragging ? 'var(--blue-50)' : 'var(--slate-50)',
+                padding: '60px 40px',
+                textAlign: 'center',
+                borderRadius: 16,
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                marginBottom: 24
+              }}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={handleBrowseClick}
+            >
+              <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
+                <Upload size={40} className="text-blue-600" />
+              </div>
+              <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                {isDragging ? 'Drop file here' : 'Upload Document'}
+              </h4>
+              <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 16 }}>
+                Drag and drop a PDF or image file, or click to browse
+              </p>
+              <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>
+                Supported formats: PDF, JPEG, PNG
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ background: 'var(--slate-50)', padding: 20, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ background: 'white', width: 60, height: 60, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {uploadedFile.type === 'application/pdf' ? <File size={32} className="text-red-500" /> : <FileImage size={32} className="text-blue-500" />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {uploadedFile.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>
+                    {(uploadedFile.size / 1024).toFixed(2)} KB
+                  </div>
+                </div>
+                <button
+                  onClick={clearFile}
+                  style={{ padding: 8, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate-500)' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {extractedText && (
+                <div style={{ marginTop: 16, padding: 16, background: 'var(--blue-50)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>OCR Extracted Content:</div>
+                  <div style={{ fontSize: 12, color: 'var(--blue-800)', wordBreak: 'break-word' }}>{extractedText}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Manual Hash Input */}
+          <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--slate-100)' }}>
+            <label className="label">Or enter document hash manually (Keccak256)</label>
+            <input 
+              className="input mono" 
+              placeholder="Enter 64-character hex hash to verify..." 
+              style={{ marginBottom: 16 }} 
+              value={verifyHash}
+              onChange={(e) => setVerifyHash(e.target.value)}
+            />
+          </div>
+
           <button 
             className="btn btn-primary" 
             onClick={handleVerify}
             disabled={verifying || !verifyHash}
+            style={{ width: '100%' }}
           >
             {verifying ? (
               <><RefreshCw size={16} className="spin" /> Verifying...</>
