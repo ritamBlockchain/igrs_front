@@ -31,6 +31,7 @@ type IngestionStatus = 'idle' | 'parsing' | 'ready' | 'uploading' | 'completed' 
 interface ParsedRecord {
   record_id: string;
   owner_name: string;
+  father_name?: string;
   owner_id: string;
   survey_no: string;
   khasra_no: string;
@@ -42,6 +43,7 @@ interface ParsedRecord {
   ownership_type: string;
   status: 'pending' | 'success' | 'error';
   error?: string;
+  ocr_session_id?: string;
 }
 
 export default function BulkOperationsPage() {
@@ -55,7 +57,7 @@ export default function BulkOperationsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // DB Sync State
-  const [dbUrl, setDbUrl] = useState('postgresql://postgres:postgres@localhost:5434/jadeledger');
+  const [dbUrl, setDbUrl] = useState('postgresql://postgres:password@localhost:5434/jadeledger?sslmode=disable');
   const [dbLimit, setDbLimit] = useState(100);
   
   // Modal State
@@ -98,6 +100,7 @@ export default function BulkOperationsPage() {
           return {
             record_id: record.record_id || record.recordid || `REC-${Math.floor(Math.random() * 1000000)}`,
             owner_name: record.owner_name || record.ownername || record.owner || record.owner_id || record.ownerid || 'Unknown',
+            father_name: record.father_name || record.fathername || record.father || '',
             owner_id: record.owner_id || record.ownerid || 'N/A',
             survey_no: record.survey_no || record.surveyno || record.survey_number || record.surveynumber || 'N/A',
             khasra_no: record.khasra_no || record.khasrano || record.khasra_number || record.khasranumber || 'N/A',
@@ -133,6 +136,7 @@ export default function BulkOperationsPage() {
         const data: ParsedRecord[] = records.map((r: any) => ({
           record_id: r.record_id || `JSON-${Math.floor(Math.random() * 1000)}`,
           owner_name: r.owner_name || 'N/A',
+          father_name: r.father_name || '',
           owner_id: r.owner_id || 'N/A',
           survey_no: r.survey_no || '-',
           khasra_no: r.khasra_no || '-',
@@ -154,17 +158,54 @@ export default function BulkOperationsPage() {
     reader.readAsText(file);
   };
 
-  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIngestionStatus('ready');
-    setParsedData([{ 
-      record_id: 'PDF-READY', 
-      owner_name: file.name, 
-      owner_id: file.type === 'application/zip' ? 'ZIP Archive' : 'PDF Document',
-      survey_no: '-', khasra_no: '-', area_sq_m: 0, land_type: 'OCR Pending',
-      village_name: '-', tehsil_name: '-', district_name: '-', ownership_type: '-', status: 'pending' 
-    }]);
+
+    setIngestionStatus('parsing');
+    setErrorMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('batch_id', `PREVIEW-${Date.now()}`);
+
+      const response = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/pdf-ingest`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-User-Role': localStorage.getItem('jade_role') || 'Admin' }
+      });
+
+      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+      const result = await response.json();
+      
+      if (result.extraction && result.extraction.fields) {
+        const f = result.extraction.fields;
+        const data: ParsedRecord = {
+          record_id: f.record_id || `PDF-${Math.floor(Math.random() * 1000)}`,
+          owner_name: f.owner_name || 'N/A',
+          father_name: f.father_name || '',
+          owner_id: f.owner_id || 'N/A',
+          survey_no: f.survey_no || '-',
+          khasra_no: f.khasra_no || '-',
+          area_sq_m: parseFloat(f.area) || 0,
+          land_type: f.land_type || 'PDF Record',
+          village_name: f.village_name || '-',
+          tehsil_name: f.taluka_name || f.block_name || '-',
+          district_name: f.district_name || '-',
+          ownership_type: f.ownership_type || 'Full Ownership',
+          status: 'pending',
+          ocr_session_id: result.session_id
+        };
+        setParsedData([data]);
+        setIngestionStatus('ready');
+      } else {
+        throw new Error("Could not extract data from PDF");
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'PDF extraction failed');
+      setIngestionStatus('error');
+    }
   };
 
   const handleDbSync = async () => {
@@ -199,6 +240,7 @@ export default function BulkOperationsPage() {
         const data: ParsedRecord[] = result.rows.map((r: any) => ({
           record_id: r.record_id || `DB-${Math.floor(Math.random() * 1000)}`,
           owner_name: r.owner_name || 'N/A',
+          father_name: r.father_name || '',
           owner_id: r.owner_id || 'N/A',
           survey_no: r.survey_no || '-',
           khasra_no: r.khasra_no || '-',
@@ -257,6 +299,29 @@ export default function BulkOperationsPage() {
           },
           body: JSON.stringify(parsedData)
         });
+      } else if (activeTab === 'pdf' && parsedData[0]?.ocr_session_id) {
+        // Special flow for OCR commit: use the staged session
+        const record = parsedData[0];
+        response = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/ocr-commit`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Role': localStorage.getItem('jade_role') || 'Admin'
+          },
+          body: JSON.stringify({
+            session_id: record.ocr_session_id,
+            confirm: true,
+            owner_name: record.owner_name,
+            father_name: record.father_name,
+            survey_no: record.survey_no,
+            khasra_no: record.khasra_no,
+            area: record.area_sq_m,
+            doc_type: record.land_type,
+            village_name: record.village_name,
+            taluka_name: record.tehsil_name,
+            district_name: record.district_name
+          })
+        });
       } else {
         const formData = new FormData();
         if (file) formData.append('file', file);
@@ -269,11 +334,18 @@ export default function BulkOperationsPage() {
         });
       }
 
-      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
       const result = await response.json();
       
       const newData = [...parsedData];
-      if (result && result.rows && Array.isArray(result.rows)) {
+      if (activeTab === 'pdf') {
+        const ok = response.ok || result.ok || result.record_id;
+        newData[0] = {
+          ...newData[0],
+          status: ok ? 'success' : 'error',
+          record_id: result.record?.record_id || result.record_id || newData[0].record_id,
+          error: ok ? undefined : (result.error || 'Ingestion failed')
+        };
+      } else if (result && result.rows && Array.isArray(result.rows)) {
         result.rows.forEach((rowResult: any) => {
           const idx = rowResult.row_index - 1;
           if (idx >= 0 && idx < newData.length) {
@@ -374,6 +446,7 @@ export default function BulkOperationsPage() {
     // Table data
     const fields = [
       { label: 'Owner Name', value: record.owner_name },
+      { label: "Father's Name", value: record.father_name || 'N/A' },
       { label: 'Owner ID', value: record.owner_id },
       { label: 'Survey Number', value: record.survey_no },
       { label: 'Khasra Number', value: record.khasra_no },
@@ -469,7 +542,18 @@ export default function BulkOperationsPage() {
       <input type="file" ref={jsonInputRef} onChange={handleJsonUpload} accept=".json" style={{ display: 'none' }} />
       <input type="file" ref={pdfInputRef} onChange={handlePdfUpload} accept=".pdf,.zip" style={{ display: 'none' }} />
 
-      {(ingestionStatus === 'idle' || ingestionStatus === 'error') ? (
+      {ingestionStatus === 'parsing' ? (
+        <div className="card animate-in" style={{ padding: 100, textAlign: 'center', borderRadius: 24, background: 'white', boxShadow: '0 20px 50px rgba(0,0,0,0.05)' }}>
+          <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 32px' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: '50%', border: '4px solid var(--blue-50)', borderTopColor: 'var(--blue-600)' }} className="animate-spin"></div>
+            <FileText size={32} style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: 'var(--blue-600)' }} />
+          </div>
+          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Processing Document...</h3>
+          <p style={{ color: 'var(--slate-500)', maxWidth: 400, margin: '0 auto', fontSize: 16, lineHeight: 1.6 }}>
+            Our AI is currently analyzing your file to extract land record metadata. This typically takes 5-10 seconds.
+          </p>
+        </div>
+      ) : (ingestionStatus === 'idle' || (ingestionStatus === 'error' && parsedData.length === 0)) ? (
         activeTab === 'db' ? (
           <section className="animate-in">
             <div className="card" style={{ padding: 60, textAlign: 'center', borderRadius: 28, background: 'linear-gradient(to bottom, white, var(--slate-50))' }}>
@@ -487,8 +571,8 @@ export default function BulkOperationsPage() {
                   <input 
                     type="text" 
                     className="input" 
-                    placeholder="postgresql://postgres:postgres@localhost:5434/jadeledger" 
-                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12 }}
+                    placeholder="postgresql://postgres:password@localhost:5434/jadeledger?sslmode=disable" 
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid var(--slate-200)' }}
                     value={dbUrl}
                     onChange={(e) => setDbUrl(e.target.value)}
                   />
@@ -605,6 +689,7 @@ export default function BulkOperationsPage() {
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Record ID</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Father's Name</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner ID</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Survey / Khasra</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Area (sqm)</th>
@@ -626,6 +711,7 @@ export default function BulkOperationsPage() {
                         </td>
                         <td style={{ padding: '16px 20px', fontWeight: 600, fontSize: 13 }}>{row.record_id}</td>
                         <td style={{ padding: '16px 20px', fontWeight: 500 }}>{row.owner_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.father_name || '-'}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.owner_id}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.survey_no} / {row.khasra_no}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.area_sq_m}</td>
@@ -690,6 +776,10 @@ export default function BulkOperationsPage() {
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Owner Name</label>
                   <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.owner_name}</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Father's Name</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.father_name || 'N/A'}</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Owner ID</label>
@@ -765,7 +855,7 @@ export default function BulkOperationsPage() {
               <div style={{ background: 'var(--blue-50)', padding: 16, borderRadius: 12, marginBottom: 24 }}>
                 <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>CSV Format</h4>
                 <code style={{ display: 'block', background: 'white', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', border: '1px solid var(--blue-100)' }}>
-                  record_id,owner_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type
+                  record_id,owner_name,father_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type
                 </code>
               </div>
 
@@ -778,6 +868,10 @@ export default function BulkOperationsPage() {
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>owner_name</label>
                   <p style={{ margin: 0, fontSize: 14 }}>Full name of the land owner</p>
+                </div>
+                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>father_name</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Father's name of the land owner</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>owner_id</label>

@@ -16,6 +16,8 @@ export default function RegisterLandPage() {
   const [fileName, setFileName] = useState('');
   const [copied, setCopied] = useState(false);
   const [indexCopied, setIndexCopied] = useState(false);
+  const [extractionLoading, setExtractionLoading] = useState(false);
+  const [ocrSessionId, setOcrSessionId] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -30,6 +32,7 @@ export default function RegisterLandPage() {
     landType: '',
     docType: '',
     ownerId: '',
+    fatherName: '',
     ownershipType: '',
     indexHash: ''
   });
@@ -38,32 +41,32 @@ export default function RegisterLandPage() {
 
   // Extract data from document (simulated - in production this would use OCR/API)
   const extractDataFromDocument = async (file: File): Promise<Partial<typeof formData>> => {
-    // In production: Call backend OCR API to extract data from PDF/Image
-    // For demo: Simulate extracted data based on filename
-    const filename = file.name.toLowerCase();
-    
-    // Simulate data extraction with demo values
-    const extracted: Partial<typeof formData> = {};
-    
-    // Try to extract survey number from filename (e.g., "survey-123-A.pdf")
-    const surveyMatch = filename.match(/survey-?(\d+[-\/]?[a-z]?)/i);
-    if (surveyMatch) extracted.surveyNo = surveyMatch[1];
-    
-    // Try to extract khasra number
-    const khasraMatch = filename.match(/khasra-?(\d+)/i);
-    if (khasraMatch) extracted.khasraNo = khasraMatch[1];
-    
-    // Default values for demo
-    extracted.village = extracted.village || 'Demo Village';
-    extracted.tehsil = extracted.tehsil || 'Demo Taluka';
-    extracted.district = extracted.district || 'Demo District';
-    extracted.landType = extracted.landType || 'Agricultural';
-    extracted.docType = extracted.docType || 'Sale Deed';
-    extracted.ownerId = extracted.ownerId || 'OWNER-' + Math.floor(Math.random() * 1000);
-    extracted.ownershipType = extracted.ownershipType || 'Individual';
-    extracted.area = extracted.area || (Math.floor(Math.random() * 1000) + 100).toString();
-    
-    return extracted;
+    setExtractionLoading(true);
+    try {
+      const res = await api.extractPdfData(file);
+      if (res && res.session_id) {
+        setOcrSessionId(res.session_id);
+        const f = res.extraction.fields;
+        return {
+          surveyNo: f.survey_no || '',
+          khasraNo: f.khasra_no || '',
+          village: f.village_name || '',
+          tehsil: f.block_name || f.taluka_name || '',
+          district: f.district_name || '',
+          area: f.area || '',
+          landType: f.land_type || '',
+          docType: f.doc_type || '',
+          ownerId: f.owner_name || '',
+          fatherName: f.father_name || '',
+        };
+      }
+      return {};
+    } catch (err) {
+      console.error("OCR extraction failed:", err);
+      return {};
+    } finally {
+      setExtractionLoading(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,7 +106,7 @@ export default function RegisterLandPage() {
       const requiredFields = [
         'recordId', 'surveyNo', 'village', 
         'tehsil', 'district', 'area', 'landType', 
-        'docType', 'ownerId', 'ownershipType'
+        'docType', 'ownerId', 'fatherName', 'ownershipType'
       ];
       
       const allFilled = requiredFields.every(field => !!(formData as any)[field]);
@@ -134,7 +137,7 @@ export default function RegisterLandPage() {
     formData.recordId, formData.surveyNo, 
     formData.village, formData.tehsil, formData.district, 
     formData.area, formData.landType, formData.docType, 
-    formData.ownerId, formData.ownershipType
+    formData.ownerId, formData.fatherName, formData.ownershipType
   ]);
 
   const copyToClipboard = (text: string, isIndex: boolean) => {
@@ -229,7 +232,7 @@ export default function RegisterLandPage() {
                  {hashing ? (
                    <div style={{ animation: 'pulse 1s infinite' }}>
                      <div className="loader-spin" style={{ margin: '0 auto' }} />
-                     <p style={{ fontSize: '14px', color: 'var(--blue-600)', fontWeight: 600, marginTop: '12px' }}>Computing SHA-256 Hash...</p>
+                     <p style={{ fontSize: '14px', color: 'var(--blue-600)', fontWeight: 600, marginTop: '12px' }}>{hashing ? 'Computing SHA-256 Hash...' : 'Extracting Data with OCR...'}</p>
                    </div>
                  ) : fileName ? (
                    <div>
@@ -353,12 +356,21 @@ export default function RegisterLandPage() {
               </select>
             </div>
             <div>
-              <label className="label">Owner ID *</label>
+              <label className="label">Owner Name *</label>
               <input 
                 className="input" 
-                placeholder="e.g. OWNER-001" 
+                placeholder="e.g. Rajesh Patel" 
                 value={formData.ownerId}
                 onChange={(e) => updateField('ownerId', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Father's Name</label>
+              <input 
+                className="input" 
+                placeholder="e.g. Gambhir Singh" 
+                value={formData.fatherName}
+                onChange={(e) => updateField('fatherName', e.target.value)}
               />
             </div>
             <div>
@@ -423,6 +435,7 @@ export default function RegisterLandPage() {
                 landType: '',
                 docType: '',
                 ownerId: '',
+                fatherName: '',
                 ownershipType: '',
                 indexHash: ''
               });
@@ -439,29 +452,45 @@ export default function RegisterLandPage() {
                 setSubmitting(true);
                 setSubmitError(null);
                 try {
-                  await api.createRecord({
-                    record_id: formData.recordId,
-                    owner_name: formData.ownerId,
-                    owner_id: formData.ownerId,
-                    survey_no: formData.surveyNo,
-                    khasra_no: formData.khasraNo,
-                    village_name: formData.village,
-                    taluka_name: formData.tehsil,
-                    district_name: formData.district,
-                    // Required numeric IDs for backend - using demo values
-                    // In production, these would come from a village/district selector
-                    village_id: 1,
-                    district_id: 1,
-                    block_id: 1,
-                    taluka_id: 1,
-                    area_sq_m: parseFloat(formData.area) || 0,
-                    land_type: formData.landType,
-                    doc_type: formData.docType,
-                    ownership_type: formData.ownershipType,
-                    // Document hash is required by chaincode - use placeholder if not uploaded
-                    document_hash: formData.docHash || '0000000000000000000000000000000000000000000000000000000000000000',
-                    index_hash: formData.indexHash,
-                  });
+                  if (ocrSessionId) {
+                    await api.commitOcr({
+                      session_id: ocrSessionId,
+                      confirm: true,
+                      village_id: 0, // Backend will resolve from name
+                      district_id: 0,
+                      block_id: 0,
+                      taluka_id: 0,
+                      owner_name: formData.ownerId, // owner_name mapped to ownerId in UI
+                      father_name: formData.fatherName,
+                      survey_no: formData.surveyNo,
+                      area: formData.area,
+                      doc_type: formData.docType,
+                      uploaded_by: 'Revenue Admin',
+                      role: role || 'Revenue Admin',
+                    });
+                  } else {
+                    await api.createRecord({
+                      record_id: formData.recordId,
+                      owner_name: formData.ownerId,
+                      owner_id: formData.ownerId,
+                      father_name: formData.fatherName,
+                      survey_no: formData.surveyNo,
+                      khasra_no: formData.khasraNo,
+                      village_name: formData.village,
+                      taluka_name: formData.tehsil,
+                      district_name: formData.district,
+                      village_id: 1,
+                      district_id: 1,
+                      block_id: 1,
+                      taluka_id: 1,
+                      area_sq_m: parseFloat(formData.area) || 0,
+                      land_type: formData.landType,
+                      doc_type: formData.docType,
+                      ownership_type: formData.ownershipType,
+                      document_hash: formData.docHash || '0000000000000000000000000000000000000000000000000000000000000000',
+                      index_hash: formData.indexHash,
+                    });
+                  }
                   setSubmitted(true);
                   // Refresh records in DataContext so new record appears in list
                   await refreshAll();

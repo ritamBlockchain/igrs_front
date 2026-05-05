@@ -362,6 +362,7 @@ export default function LandDetailPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
             {[
               { label: 'Owner', value: record.owner_name, icon: <User size={14} /> },
+              { label: "Father's Name", value: record.father_name || 'N/A', icon: <User size={14} /> },
               { label: 'Village', value: record.village_name, icon: <MapPin size={14} /> },
               { label: 'Taluka', value: record.taluka_name, icon: <MapPin size={14} /> },
               { label: 'District', value: record.district_name, icon: <MapPin size={14} /> },

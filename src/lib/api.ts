@@ -8,6 +8,7 @@ export interface LandRecord {
   id: number;
   record_id: string;
   owner_name: string;
+  father_name?: string;
   village_name: string;
   taluka_name: string;
   district_name: string;
@@ -435,6 +436,45 @@ export const api = {
   
   getVillages: (districtId?: number) => 
     apiFetch<{ villages: Array<{ id: number; name: string; village_code: string; district_id: number; district_name: string; taluka_id: number; taluka_name: string }> }>(`/api/villages${districtId ? `?district_id=${districtId}` : ''}`),
+
+  extractPdfData: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const storedRole = typeof window !== 'undefined' ? localStorage.getItem('jade_role') : null;
+    return fetch(`${API_BASE_URL}/api/ingest/pdf-ingest`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(storedRole ? { 'X-User-Role': storedRole } : {}),
+      }
+    }).then(async res => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`OCR failed: ${text}`);
+      }
+      return res.json() as Promise<{ session_id: string; extraction: any; filename: string }>;
+    });
+  },
+
+  commitOcr: (data: {
+    session_id: string;
+    confirm: boolean;
+    fields?: any;
+    village_id: number;
+    district_id: number;
+    block_id: number;
+    taluka_id: number;
+    owner_name: string;
+    survey_no: string;
+    area: string;
+    doc_type: string;
+    uploaded_by: string;
+    role: string;
+  }) => 
+    apiFetch<{ record_id: string; status: string; message?: string }>('/api/ingest/ocr-commit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 export default api;
