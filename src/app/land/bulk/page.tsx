@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { 
-  FileText, 
-  Upload, 
-  CheckCircle2, 
-  AlertCircle, 
-  Loader2, 
-  ChevronRight, 
-  Search, 
-  Filter, 
+import {
+  FileText,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  ChevronRight,
+  Search,
+  Filter,
   Database,
   Trash2,
   Copy,
@@ -25,6 +25,7 @@ import { useData } from "@/context/DataContext";
 import api, { LandRecord } from "@/lib/api";
 import CONFIG from "@/lib/config";
 import jsPDF from "jspdf";
+import { keccak256 } from "ethers";
 
 type IngestionStatus = 'idle' | 'parsing' | 'ready' | 'uploading' | 'completed' | 'error';
 
@@ -38,12 +39,13 @@ interface ParsedRecord {
   area_sq_m: number;
   land_type: string;
   village_name: string;
-  tehsil_name: string;
+  'tehsil/taluka': string;
   district_name: string;
   ownership_type: string;
   status: 'pending' | 'success' | 'error';
   error?: string;
   ocr_session_id?: string;
+  keccak256_hash?: string;
 }
 
 export default function BulkOperationsPage() {
@@ -69,6 +71,16 @@ export default function BulkOperationsPage() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Keccak256 Hash Generation ---
+  const generateKeccak256Hash = (record: ParsedRecord): string => {
+    // Convert record to a deterministic string for hashing
+    const recordString = JSON.stringify(record, Object.keys(record).sort());
+    // Convert string to UTF-8 bytes, then to hex for keccak256
+    const encoder = new TextEncoder();
+    const data = encoder.encode(recordString);
+    return keccak256(data);
+  };
 
   // --- CSV Ingestion Logic ---
 
@@ -97,7 +109,7 @@ export default function BulkOperationsPage() {
             record[minimalHeader] = values[i];
           });
 
-          return {
+          const parsedRecord: ParsedRecord = {
             record_id: record.record_id || record.recordid || `REC-${Math.floor(Math.random() * 1000000)}`,
             owner_name: record.owner_name || record.ownername || record.owner || record.owner_id || record.ownerid || 'Unknown',
             father_name: record.father_name || record.fathername || record.father || '',
@@ -107,11 +119,25 @@ export default function BulkOperationsPage() {
             area_sq_m: parseFloat(record.area) || parseFloat(record.areasqm) || parseFloat(record.area_sq_m) || 0,
             land_type: record.land_type || record.landtype || 'Agricultural',
             village_name: record.village_name || record.villagename || record.village || 'Default',
-            tehsil_name: record.tehsil_name || record.tehsilname || record.tehsil || record.taluka || 'Default',
+            'tehsil/taluka': record.tehsil_name || record.tehsilname || record.tehsil || record.taluka || 'Default',
             district_name: record.district_name || record.districtname || record.district || 'Default',
             ownership_type: record.ownership_type || record.ownershiptype || record.ownership || record['ownership type'] || 'Full Ownership',
             status: 'pending'
           };
+
+          // Generate keccak256 hash for the record
+          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+
+          return parsedRecord;
+        });
+
+        // Log the JSON conversion
+        console.log('CSV converted to JSON:', JSON.stringify(data, null, 2));
+
+        // Log the keccak256 hashes for each record
+        console.log('Keccak256 Merkle Hashes (Leaf Nodes):');
+        data.forEach((record, index) => {
+          console.log(`Record ${index + 1} (${record.record_id}): ${record.keccak256_hash}`);
         });
 
         setParsedData(data);
@@ -143,7 +169,7 @@ export default function BulkOperationsPage() {
           area_sq_m: r.area || 0,
           land_type: r.land_type || 'JSON Record',
           village_name: r.village_name || '-',
-          tehsil_name: r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
+          'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
           district_name: r.district_name || r.district || '-',
           ownership_type: r.ownership_type || r.ownership || r.ownershiptype || 'Full Ownership',
           status: 'pending'
@@ -191,7 +217,7 @@ export default function BulkOperationsPage() {
           area_sq_m: parseFloat(f.area) || 0,
           land_type: f.land_type || 'PDF Record',
           village_name: f.village_name || '-',
-          tehsil_name: f.taluka_name || f.block_name || '-',
+          'tehsil/taluka': f.taluka_name || f.block_name || '-',
           district_name: f.district_name || '-',
           ownership_type: f.ownership_type || 'Full Ownership',
           status: 'pending',
@@ -247,7 +273,7 @@ export default function BulkOperationsPage() {
           area_sq_m: parseFloat(r.area) || 0,
           land_type: r.land_type || 'DB Record',
           village_name: r.village_name || '-',
-          tehsil_name: r.tehsil_name || '-',
+          'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
           district_name: r.district_name || '-',
           ownership_type: r.ownership_type || 'N/A',
           status: 'pending'
@@ -318,7 +344,7 @@ export default function BulkOperationsPage() {
             area: record.area_sq_m,
             doc_type: record.land_type,
             village_name: record.village_name,
-            taluka_name: record.tehsil_name,
+            taluka_name: record['tehsil/taluka'],
             district_name: record.district_name
           })
         });
@@ -381,11 +407,8 @@ export default function BulkOperationsPage() {
   };
 
   const downloadSampleCSV = () => {
-    const headers = "record_id,owner_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type";
-    const sample1 = "\nMP-BHO-2026001,Rajesh Kumar,UID-9988,S-45,288/8,1200,Agricultural,Maksi,Berasia,Bhopal,Full Ownership";
-    const sample2 = "\nMP-BHO-2026002,Priya Singh,UID-9989,S-46,289/1,2500,Residential,Maksi,Berasia,Bhopal,Joint Ownership";
-    const sample3 = "\nMP-BHO-2026003,Amit Sharma,UID-9990,S-47,290/3,1800,Commercial,Maksi,Berasia,Bhopal,Leasehold";
-    const blob = new Blob([headers + sample1 + sample2 + sample3], { type: 'text/csv' });
+    const headers = "record_id,owner_name,owner_id,survey/khasra,area,land_type,village_name,tehsil/taluka,district_name,ownership_type";
+    const blob = new Blob([headers], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'land_records_sample.csv'; a.click();
@@ -453,7 +476,7 @@ export default function BulkOperationsPage() {
       { label: 'Area (sqm)', value: record.area_sq_m.toString() },
       { label: 'Land Type', value: record.land_type },
       { label: 'Village', value: record.village_name },
-      { label: 'Tehsil', value: record.tehsil_name },
+      { label: 'Tehsil / Taluka', value: record['tehsil/taluka'] },
       { label: 'District', value: record.district_name },
       { label: 'Ownership Type', value: record.ownership_type },
     ];
@@ -592,9 +615,9 @@ export default function BulkOperationsPage() {
                   className="btn btn-primary" 
                   style={{ width: '100%', padding: '14px', fontSize: 16, borderRadius: 12 }}
                   onClick={handleDbSync}
-                  disabled={ingestionStatus === 'parsing'}
+                  disabled={ingestionStatus !== 'idle' && ingestionStatus !== 'error'}
                 >
-                  {ingestionStatus === 'parsing' ? (
+                  {ingestionStatus !== 'idle' && ingestionStatus !== 'error' ? (
                     <><Loader2 size={20} className="animate-spin" /> Connecting...</>
                   ) : (
                     <><Search size={20} /> Test Connection & Map Fields</>
@@ -695,7 +718,7 @@ export default function BulkOperationsPage() {
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Area (sqm)</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Land Type</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Village</th>
-                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tehsil</th>
+                      <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tehsil / Taluka</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>District</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ownership</th>
                       <th style={{ padding: '16px 20px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actions</th>
@@ -717,7 +740,7 @@ export default function BulkOperationsPage() {
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.area_sq_m}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.land_type}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.village_name}</td>
-                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.tehsil_name}</td>
+                        <td style={{ padding: '16px 20px', fontSize: 13 }}>{row['tehsil/taluka']}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.district_name}</td>
                         <td style={{ padding: '16px 20px', fontSize: 13 }}>{row.ownership_type}</td>
                         <td style={{ padding: '16px 20px' }}>
@@ -786,12 +809,8 @@ export default function BulkOperationsPage() {
                   <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.owner_id}</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Survey Number</label>
-                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.survey_no}</p>
-                </div>
-                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Khasra Number</label>
-                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.khasra_no}</p>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Survey / Khasra</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.survey_no} / {selectedRecord.khasra_no}</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Area (sqm)</label>
@@ -806,8 +825,8 @@ export default function BulkOperationsPage() {
                   <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.village_name}</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Tehsil</label>
-                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord.tehsil_name}</p>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>Tehsil / Taluka</label>
+                  <p style={{ margin: 0, fontSize: 16 }}>{selectedRecord['tehsil/taluka']}</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>District</label>
@@ -855,7 +874,7 @@ export default function BulkOperationsPage() {
               <div style={{ background: 'var(--blue-50)', padding: 16, borderRadius: 12, marginBottom: 24 }}>
                 <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>CSV Format</h4>
                 <code style={{ display: 'block', background: 'white', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', border: '1px solid var(--blue-100)' }}>
-                  record_id,owner_name,father_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil_name,district_name,ownership_type
+                  record_id,owner_name,father_name,owner_id,survey_no,khasra_no,area,land_type,village_name,tehsil/taluka,district_name,ownership_type
                 </code>
               </div>
 
@@ -878,12 +897,8 @@ export default function BulkOperationsPage() {
                   <p style={{ margin: 0, fontSize: 14 }}>Government ID or UID of the owner</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>survey_no</label>
-                  <p style={{ margin: 0, fontSize: 14 }}>Survey number of the land parcel</p>
-                </div>
-                <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>khasra_no</label>
-                  <p style={{ margin: 0, fontSize: 14 }}>Khasra number of the land parcel</p>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>survey/khasra</label>
+                  <p style={{ margin: 0, fontSize: 14 }}>Survey and Khasra numbers of the land parcel (e.g., S-250/288/8)</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>area</label>
@@ -898,7 +913,7 @@ export default function BulkOperationsPage() {
                   <p style={{ margin: 0, fontSize: 14 }}>Name of the village</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>tehsil_name</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', marginBottom: 4 }}>tehsil/taluka</label>
                   <p style={{ margin: 0, fontSize: 14 }}>Name of the tehsil/taluka</p>
                 </div>
                 <div style={{ background: 'var(--slate-50)', padding: 16, borderRadius: 12 }}>
@@ -924,7 +939,7 @@ export default function BulkOperationsPage() {
                       <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>area</th>
                       <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>land_type</th>
                       <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>village</th>
-                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>tehsil</th>
+                      <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>tehsil/taluka</th>
                       <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>district</th>
                       <th style={{ padding: 12, textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--slate-200)' }}>ownership</th>
                     </tr>

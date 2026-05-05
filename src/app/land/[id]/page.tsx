@@ -26,6 +26,7 @@ export default function LandDetailPage() {
   const [verifyHash, setVerifyHash] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{success: boolean, message: string, data?: any} | null>(null);
+
   
   // File upload state
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
