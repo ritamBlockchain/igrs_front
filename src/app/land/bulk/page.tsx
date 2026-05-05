@@ -419,6 +419,15 @@ export default function BulkOperationsPage() {
     setShowRecordModal(true);
   };
 
+  const viewMerkleHash = (record: ParsedRecord) => {
+    const hash = record.keccak256_hash;
+    if (hash) {
+      alert(`Merkle Hash for ${record.record_id}:\n\n${hash}`);
+    } else {
+      alert(`No merkle hash generated for ${record.record_id}`);
+    }
+  };
+
   const openTemplateModal = () => {
     setShowTemplateModal(true);
   };
@@ -752,6 +761,14 @@ export default function BulkOperationsPage() {
                               title="Preview Full Details"
                             >
                               <Eye size={14} /> Preview
+                            </button>
+                            <button
+                              onClick={() => viewMerkleHash(row)}
+                              className="btn btn-outline"
+                              style={{ padding: '6px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                              title="View Merkle Hash"
+                            >
+                              <FileCode size={14} /> Hash
                             </button>
                             <button
                               onClick={() => downloadRecordAsPDF(row)}
