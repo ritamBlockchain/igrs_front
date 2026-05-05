@@ -159,21 +159,38 @@ export default function BulkOperationsPage() {
       try {
         const json = JSON.parse(event.target?.result as string);
         const records = Array.isArray(json) ? json : [json];
-        const data: ParsedRecord[] = records.map((r: any) => ({
-          record_id: r.record_id || `JSON-${Math.floor(Math.random() * 1000)}`,
-          owner_name: r.owner_name || 'N/A',
-          father_name: r.father_name || '',
-          owner_id: r.owner_id || 'N/A',
-          survey_no: r.survey_no || '-',
-          khasra_no: r.khasra_no || '-',
-          area_sq_m: r.area || 0,
-          land_type: r.land_type || 'JSON Record',
-          village_name: r.village_name || '-',
-          'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
-          district_name: r.district_name || r.district || '-',
-          ownership_type: r.ownership_type || r.ownership || r.ownershiptype || 'Full Ownership',
-          status: 'pending'
-        }));
+        const data: ParsedRecord[] = records.map((r: any) => {
+          const parsedRecord: ParsedRecord = {
+            record_id: r.record_id || `JSON-${Math.floor(Math.random() * 1000)}`,
+            owner_name: r.owner_name || 'N/A',
+            father_name: r.father_name || '',
+            owner_id: r.owner_id || 'N/A',
+            survey_no: r.survey_no || '-',
+            khasra_no: r.khasra_no || '-',
+            area_sq_m: r.area || 0,
+            land_type: r.land_type || 'JSON Record',
+            village_name: r.village_name || '-',
+            'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
+            district_name: r.district_name || r.district || '-',
+            ownership_type: r.ownership_type || r.ownership || r.ownershiptype || 'Full Ownership',
+            status: 'pending'
+          };
+
+          // Generate keccak256 hash for the record
+          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+
+          return parsedRecord;
+        });
+
+        // Log the JSON conversion
+        console.log('JSON uploaded:', JSON.stringify(data, null, 2));
+
+        // Log the keccak256 hashes for each record
+        console.log('Keccak256 Merkle Hashes (Leaf Nodes):');
+        data.forEach((record, index) => {
+          console.log(`Record ${index + 1} (${record.record_id}): ${record.keccak256_hash}`);
+        });
+
         setParsedData(data);
         setIngestionStatus('ready');
       } catch (err) {
@@ -223,6 +240,17 @@ export default function BulkOperationsPage() {
           status: 'pending',
           ocr_session_id: result.session_id
         };
+
+        // Generate keccak256 hash for the record
+        data.keccak256_hash = generateKeccak256Hash(data);
+
+        // Log the PDF extraction
+        console.log('PDF extracted:', JSON.stringify(data, null, 2));
+
+        // Log the keccak256 hash
+        console.log('Keccak256 Merkle Hash (Leaf Node):');
+        console.log(`Record (${data.record_id}): ${data.keccak256_hash}`);
+
         setParsedData([data]);
         setIngestionStatus('ready');
       } else {
@@ -263,21 +291,38 @@ export default function BulkOperationsPage() {
       
       const result = await response.json();
       if (result.ok && Array.isArray(result.rows)) {
-        const data: ParsedRecord[] = result.rows.map((r: any) => ({
-          record_id: r.record_id || `DB-${Math.floor(Math.random() * 1000)}`,
-          owner_name: r.owner_name || 'N/A',
-          father_name: r.father_name || '',
-          owner_id: r.owner_id || 'N/A',
-          survey_no: r.survey_no || '-',
-          khasra_no: r.khasra_no || '-',
-          area_sq_m: parseFloat(r.area) || 0,
-          land_type: r.land_type || 'DB Record',
-          village_name: r.village_name || '-',
-          'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
-          district_name: r.district_name || '-',
-          ownership_type: r.ownership_type || 'N/A',
-          status: 'pending'
-        }));
+        const data: ParsedRecord[] = result.rows.map((r: any) => {
+          const parsedRecord: ParsedRecord = {
+            record_id: r.record_id || `DB-${Math.floor(Math.random() * 1000)}`,
+            owner_name: r.owner_name || 'N/A',
+            father_name: r.father_name || '',
+            owner_id: r.owner_id || 'N/A',
+            survey_no: r.survey_no || '-',
+            khasra_no: r.khasra_no || '-',
+            area_sq_m: parseFloat(r.area) || 0,
+            land_type: r.land_type || 'DB Record',
+            village_name: r.village_name || '-',
+            'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
+            district_name: r.district_name || '-',
+            ownership_type: r.ownership_type || 'N/A',
+            status: 'pending'
+          };
+
+          // Generate keccak256 hash for the record
+          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+
+          return parsedRecord;
+        });
+
+        // Log the DB sync
+        console.log('DB sync completed:', JSON.stringify(data, null, 2));
+
+        // Log the keccak256 hashes for each record
+        console.log('Keccak256 Merkle Hashes (Leaf Nodes):');
+        data.forEach((record, index) => {
+          console.log(`Record ${index + 1} (${record.record_id}): ${record.keccak256_hash}`);
+        });
+
         setParsedData(data);
         setIngestionStatus('ready');
       } else {
