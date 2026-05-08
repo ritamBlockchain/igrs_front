@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Shield, Upload, CheckCircle, XCircle, FileText, Search, Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Shield, Upload, CheckCircle, XCircle, FileText, Search, Loader2, AlertTriangle, ExternalLink, User } from 'lucide-react';
 import CONFIG from '@/lib/config';
 
 interface VerificationResult {
@@ -33,6 +34,12 @@ export default function VerifyPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const name = searchParams.get('name');
+    if (name) setRecordId(name);
+  }, [searchParams]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -131,16 +138,16 @@ export default function VerifyPage() {
         borderRadius: 14, padding: '1.5rem', marginTop: '1.5rem'
       }}>
         <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>
-          Record ID
+          Full Name
         </label>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1, position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <User size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
             <input
               type="text"
               value={recordId}
               onChange={e => setRecordId(e.target.value)}
-              placeholder="e.g. REC-2026-2025"
+              placeholder="Enter name"
               style={{
                 width: '100%', padding: '10px 12px 10px 36px',
                 border: '1px solid var(--border)', borderRadius: 10,

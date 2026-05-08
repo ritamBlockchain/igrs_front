@@ -3,8 +3,8 @@
 import { useRole } from "@/context/RoleContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useState } from 'react';
-import { 
-  LayoutDashboard, Map, FileText, Lock, ShieldCheck, TrendingUp, 
+import {
+  LayoutDashboard, Map, FileText, Lock, ShieldCheck, TrendingUp,
   Layers, Settings, Gavel, Landmark, PenTool, Snowflake,
   FileBox, BookOpen, Package, LogOut, Sun, Moon
 } from "lucide-react";
@@ -38,7 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Jantri Rates', icon: TrendingUp, path: '/jantri', roles: ['Admin', 'Revenue Admin', 'IGR'] },
   { name: 'Documents', icon: FileBox, path: '/documents', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Audit Trail', icon: ShieldCheck, path: '/audit', roles: ['Admin', 'Auditor', 'IGR'] },
-  { name: 'Verify Record', icon: ShieldCheck, path: '/verify', roles: ['*'], action: () => {} },
+  { name: 'Verify Record', icon: ShieldCheck, path: '/verify', roles: ['*'], action: () => { } },
   { name: 'Anchors', icon: Layers, path: '/anchors', roles: ['Admin', 'Auditor', 'IGR'] },
   { name: 'Batches', icon: Package, path: '/batches', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Settings', icon: Settings, path: '/settings', roles: ['Admin'] },
@@ -52,14 +52,14 @@ export default function Sidebar() {
 
   if (!role) return null;
 
-  const filtered = NAV_ITEMS.filter(item => 
+  const filtered = NAV_ITEMS.filter(item =>
     item.roles.includes('*') || item.roles.includes(role)
   );
 
   const mainNav = filtered.filter(i => ['/', '/land/register', '/land/bulk', '/land/records'].includes(i.path));
   const mutations = filtered.filter(i => i.path.startsWith('/mutations') || i.path === '/freeze');
   const privateData = filtered.filter(i => i.path.startsWith('/private'));
-  const system = filtered.filter(i => ['/verify', '/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path)).map(item => 
+  const system = filtered.filter(i => ['/verify', '/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path)).map(item =>
     item.path === '/verify' ? { ...item, action: () => setIsVerifyModalOpen(true) } : item
   );
 
@@ -129,15 +129,15 @@ function NavGroup({ items, pathname }: { items: NavItem[], pathname: string }) {
     <>
       {items.map(item => {
         const active = pathname === item.path;
-        
+
         if (item.action) {
           return (
-            <button 
-              key={item.path} 
+            <button
+              key={item.path}
               onClick={(e) => {
                 e.preventDefault();
                 item.action?.();
-              }} 
+              }}
               className={`${styles.navItem} ${active ? styles.active : ''}`}
               style={{ width: '100%', textAlign: 'left' }}
             >
