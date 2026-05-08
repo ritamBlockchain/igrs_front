@@ -16,7 +16,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import dagre from "dagre"
-import { ExternalLink, AlertCircle, MapPin, User, Hash, Info, History as HistoryIcon, Layers } from "lucide-react"
+import { ExternalLink, AlertCircle, Info, History as HistoryIcon } from "lucide-react"
 
 interface TreeRecord {
     record_id: string
@@ -37,83 +37,182 @@ interface TreeRecord {
     khata_number?: string
 }
 
-// Custom Node Component for Premium Feel
+// Custom Node Component to match the provided image exactly
 const LandParcelNode = memo(({ data }: { data: any }) => {
     const rec = data.record as TreeRecord
     const isActive = rec.is_active
+    const [isHovered, setIsHovered] = useState(false)
+
+    // Precise colors from the design image
+    const theme = isActive 
+        ? {
+            bg: "#f0fff4",
+            border: "#c6f6d5",
+            idText: "#22543d",
+            ownerText: "#276749",
+            areaBg: "#e6fffa",
+            areaText: "#319795",
+            iconColor: "#3182ce"
+        }
+        : {
+            bg: "#fff5f5",
+            border: "#fed7d7",
+            idText: "#9b2c2c",
+            ownerText: "#c53030",
+            areaBg: "#edf2f7",
+            areaText: "#4a5568",
+            iconColor: "#3182ce"
+        };
 
     return (
-        <div className={`group relative min-w-[280px] p-0 rounded-2xl border transition-all duration-300 hover:scale-105 hover:shadow-2xl ${
-            isActive 
-                ? "bg-white border-emerald-500 shadow-emerald-200/50" 
-                : "bg-slate-50/80 border-slate-200 shadow-slate-100"
-        } shadow-lg border-2 overflow-hidden`}>
+        <div 
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{
+                position: 'relative',
+                minWidth: 240,
+                padding: '24px 32px',
+                borderRadius: '2.5rem',
+                border: `1.5px solid ${isHovered ? theme.idText : theme.border}`,
+                background: theme.bg,
+                boxShadow: isHovered ? '0 30px 60px -12px rgba(0, 0, 0, 0.25)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                transform: isHovered ? 'translateY(-12px) scale(1.1)' : 'none',
+                transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                cursor: 'pointer',
+                zIndex: isHovered ? 100 : 1
+            }} 
+            className="lineage-node-premium"
+        >
             
-            {/* Header / Status Bar */}
-            <div className={`px-4 py-2 flex items-center justify-between ${
-                isActive ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-600"
-            }`}>
-                <div className="flex items-center gap-2">
-                    {isActive ? <MapPin size={14} className="animate-pulse" /> : <HistoryIcon size={14} />}
-                    <span className="text-[10px] font-black uppercase tracking-widest">
-                        {isActive ? "Active Parcel" : "Historical Record"}
-                    </span>
-                </div>
-                {rec.tx_hash && (
+            {/* External Link Icon - Positioned exactly as in the image */}
+            {rec.tx_hash && (
+                <div style={{ position: 'absolute', top: 18, right: 18 }}>
                     <a
                         href={`https://amoy.polygonscan.com/tx/${rec.tx_hash}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-1 rounded-md bg-white/20 hover:bg-white/40 transition-colors"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: theme.iconColor,
+                            transition: 'transform 0.2s',
+                        }}
                         onClick={(e) => e.stopPropagation()}
+                        title="View on Ledger"
                     >
-                        <ExternalLink size={12} />
+                        <ExternalLink size={18} strokeWidth={2.5} />
                     </a>
-                )}
+                </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                {/* Large Bold ID */}
+                <h3 style={{ 
+                    fontSize: '1.5rem', 
+                    fontWeight: 900, 
+                    letterSpacing: '-0.025em', 
+                    color: theme.idText,
+                    margin: 0
+                }}>
+                    {rec.survey_no || rec.khasra_no || "N/A"}
+                </h3>
+                
+                {/* Owner Name - Slightly smaller and muted */}
+                <p style={{ 
+                    fontSize: '0.95rem', 
+                    fontWeight: 600, 
+                    color: theme.ownerText,
+                    margin: 0,
+                    opacity: 0.9
+                }}>
+                    {rec.owner_name}
+                </p>
+
+                {/* Area Badge - Pill style at bottom */}
+                <div style={{ 
+                    marginTop: 14, 
+                    padding: '6px 16px', 
+                    borderRadius: '9999px', 
+                    fontSize: '11px', 
+                    fontWeight: 800, 
+                    letterSpacing: '0.05em', 
+                    textTransform: 'uppercase', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 6, 
+                    background: theme.areaBg, 
+                    color: theme.areaText,
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
+                }}>
+                    <span>{rec.area || '0'}</span>
+                    <span style={{ opacity: 0.6, fontWeight: 500 }}>Sq.m</span>
+                </div>
             </div>
 
-            <div className="p-4 space-y-3">
-                {/* Survey / Khasra No */}
-                <div className="flex items-start justify-between gap-2">
-                    <div>
-                        <h4 className="font-bold text-slate-900 text-base leading-tight">
-                            {rec.survey_no || rec.khasra_no || "N/A"}
-                        </h4>
-                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">{rec.record_id}</p>
-                    </div>
-                    <div className="text-right">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Area</span>
-                        <span className="text-xs font-black text-slate-700">{rec.area} <span className="text-[10px] font-medium opacity-60 uppercase">sq.m</span></span>
+            {/* Hover Tooltip (Glassmorphism) - Enlarged */}
+            {isHovered && (
+                <div style={{
+                    position: 'absolute',
+                    top: '115%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(255, 255, 255, 0.98)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(226, 232, 240, 1)',
+                    borderRadius: '2rem',
+                    padding: '24px 32px',
+                    width: 'max-content',
+                    minWidth: '340px',
+                    boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.3)',
+                    zIndex: 200,
+                    textAlign: 'left',
+                    pointerEvents: 'none',
+                    opacity: 1,
+                    transition: 'all 0.3s ease-out'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 4 }}>
+                            <span style={{ fontSize: '13px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Blockchain Record Details</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 14, fontSize: '15px' }}>
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Status:</span>
+                            <span style={{ color: theme.idText, fontWeight: 800, fontSize: '16px' }}>{rec.status || 'Verified'}</span>
+                            
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Mutation:</span>
+                            <span style={{ color: '#1e293b', fontWeight: 700 }}>{rec.doc_type || 'Direct Entry'}</span>
+                            
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Anchored:</span>
+                            <span style={{ color: '#1e293b', fontWeight: 700 }}>{new Date(rec.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</span>
+
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Village:</span>
+                            <span style={{ color: '#1e293b', fontWeight: 700 }}>{rec.village_id || 'N/A'}</span>
+
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Khasra:</span>
+                            <span style={{ color: '#1e293b', fontWeight: 700, fontFamily: 'monospace' }}>{rec.khasra_no || 'N/A'}</span>
+
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Record ID:</span>
+                            <span style={{ color: '#94a3b8', fontSize: '12px', wordBreak: 'break-all' }}>{rec.record_id}</span>
+                        </div>
                     </div>
                 </div>
+            )}
 
-                {/* Owner Info */}
-                <div className="flex items-center gap-3 py-2 border-y border-slate-100/50">
-                    <div className={`p-2 rounded-lg ${isActive ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
-                        <User size={14} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Recorded Owner</span>
-                        <p className="text-xs font-bold text-slate-700 truncate">{rec.owner_name}</p>
-                    </div>
-                </div>
-
-                {/* Metadata Footer */}
-                <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-1.5">
-                        <Layers size={12} className="text-slate-400" />
-                        <span className="text-[10px] font-semibold text-slate-500">{rec.doc_type || 'Inheritance'}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                        <Hash size={10} />
-                        <span>{new Date(rec.created_at).toLocaleDateString()}</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Connection Handles */}
-            <Handle type="target" position={Position.Top} className="w-3 h-3 !bg-slate-300 border-2 !border-white shadow-sm" />
-            <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-slate-300 border-2 !border-white shadow-sm" />
+            {/* Connection Handles - Subtle styling */}
+            <Handle 
+                type="target" 
+                position={Position.Top} 
+                style={{ width: 6, height: 6, background: '#a0aec0', border: 'none', top: -3 }} 
+            />
+            <Handle 
+                type="source" 
+                position={Position.Bottom} 
+                style={{ width: 6, height: 6, background: '#a0aec0', border: 'none', bottom: -3 }} 
+            />
         </div>
     )
 })
@@ -155,17 +254,29 @@ export function LandLineageTree({
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || "Failed to fetch tree")
 
-            const records: TreeRecord[] = data.records || []
+            const rawRecords: TreeRecord[] = data.records || []
+
+            // Aggressive deduplication by data content to ensure only 1 tree
+            const dataSet = new Set<string>()
+            const uniqueRecords: TreeRecord[] = []
+            
+            rawRecords.forEach(r => {
+                // Create a unique key based on the actual land data
+                const dataKey = `${r.survey_no}-${r.owner_name}-${r.area}`.toLowerCase().trim()
+                if (!dataSet.has(dataKey)) {
+                    dataSet.add(dataKey)
+                    uniqueRecords.push(r)
+                }
+            })
 
             const newNodes: Node[] = []
             const newEdges: Edge[] = []
 
             const g = new dagre.graphlib.Graph()
-            g.setGraph({ rankdir: "TB", nodesep: 150, ranksep: 200 }) // More space for premium feel
+            g.setGraph({ rankdir: "TB", nodesep: 220, ranksep: 280 })
             g.setDefaultEdgeLabel(() => ({}))
 
-            // Create nodes
-            records.forEach((rec) => {
+            uniqueRecords.forEach((rec) => {
                 newNodes.push({
                     id: rec.record_id,
                     type: 'parcel',
@@ -173,33 +284,88 @@ export function LandLineageTree({
                     position: { x: 0, y: 0 },
                 })
 
-                g.setNode(rec.record_id, { width: 300, height: 180 })
+                g.setNode(rec.record_id, { width: 260, height: 140 })
 
-                if (rec.parent_record_id) {
-                    const parentExists = records.some(r => r.record_id === rec.parent_record_id)
-                    if (parentExists) {
+                // Try to find parent using multiple possible ID formats
+                const possibleParentIds = [
+                    rec.parent_record_id,
+                    rec.parent_land_id,
+                    rec.parent_record_id?.replace(/^REC-/, ''),
+                    rec.parent_land_id?.replace(/^REC-/, ''),
+                    `REC-${rec.parent_record_id}`,
+                    `REC-${rec.parent_land_id}`
+                ].filter(Boolean) as string[]
+
+                for (const pId of possibleParentIds) {
+                    const parent = uniqueRecords.find(r => 
+                        r.record_id === pId || 
+                        r.record_id.replace(/^REC-/, '') === pId.replace(/^REC-/, '')
+                    )
+
+                    if (parent && parent.record_id !== rec.record_id) {
                         newEdges.push({
-                            id: `e-${rec.parent_record_id}-${rec.record_id}`,
-                            source: rec.parent_record_id,
+                            id: `e-${parent.record_id}-${rec.record_id}`,
+                            source: parent.record_id,
                             target: rec.record_id,
-                            animated: true,
-                            type: 'smoothstep',
+                            animated: false,
+                            type: 'bezier',
+                            style: { 
+                                strokeWidth: 2, 
+                                stroke: '#cbd5e1', 
+                                strokeDasharray: '6,4' 
+                            },
                             markerEnd: { 
                                 type: MarkerType.ArrowClosed, 
                                 width: 20, 
                                 height: 20,
                                 color: '#94a3b8'
-                            },
-                            style: { strokeWidth: 2, stroke: '#cbd5e1' }
+                            }
                         })
-                        g.setEdge(rec.parent_record_id, rec.record_id)
+                        g.setEdge(parent.record_id, rec.record_id)
+                        break
                     }
                 }
             })
 
+            // 1. Find all roots (nodes with no parents in the edges list)
+            const nodeIdsWithParents = new Set(newEdges.map(e => e.target))
+            const roots = newNodes.filter(n => !nodeIdsWithParents.has(n.id))
+            
+            // 2. If multiple roots exist, find the one most relevant to the user's request
+            let targetRootId = roots[0]?.id
+            if (roots.length > 1) {
+                // Try to find root that matches recordId or surveyKey
+                const matchingRoot = roots.find(r => 
+                    r.id === recordId || 
+                    (r.data.record as TreeRecord).survey_no === surveyKey
+                )
+                if (matchingRoot) targetRootId = matchingRoot.id
+            }
+
+            // 3. Keep only nodes/edges reachable from the target root (or all if we want to be safe)
+            // For now, let's just pick the first root's entire connected component to satisfy "Give only 1 tree"
+            const connectedNodeIds = new Set<string>()
+            if (targetRootId) {
+                const stack = [targetRootId]
+                connectedNodeIds.add(targetRootId)
+                while (stack.length > 0) {
+                    const currentId = stack.pop()!
+                    newEdges.forEach(edge => {
+                        if (edge.source === currentId && !connectedNodeIds.has(edge.target)) {
+                            connectedNodeIds.add(edge.target)
+                            stack.push(edge.target)
+                        }
+                    })
+                }
+            }
+
+            // Filter final set
+            const filteredNodes = targetRootId ? newNodes.filter(n => connectedNodeIds.has(n.id)) : newNodes
+            const filteredEdges = targetRootId ? newEdges.filter(e => connectedNodeIds.has(e.source) && connectedNodeIds.has(e.target)) : newEdges
+
             dagre.layout(g)
 
-            const finalNodes = newNodes.map((n) => {
+            const finalNodes = filteredNodes.map((n) => {
                 const nodeWithPos = g.node(n.id)
                 return {
                     ...n,
@@ -208,7 +374,7 @@ export function LandLineageTree({
             }) as Node[]
 
             setNodes(finalNodes)
-            setEdges(newEdges as Edge[])
+            setEdges(filteredEdges as Edge[])
         } catch (err: any) {
             setError(err.message)
         } finally {
@@ -222,32 +388,76 @@ export function LandLineageTree({
 
     if (loading) {
         return (
-            <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground/60 w-full bg-slate-50/50 backdrop-blur-sm rounded-[2rem] border-2 border-dashed border-slate-200">
-                <div className="relative">
-                    <div className="h-16 w-16 rounded-full border-4 border-t-emerald-500 border-emerald-100 animate-spin" />
-                    <Info className="absolute inset-0 m-auto h-6 w-6 text-emerald-500" />
+            <div style={{
+                height: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                background: 'rgba(248, 250, 252, 0.3)',
+                borderRadius: '2.5rem',
+                border: '2px dashed #e2e8f0'
+            }}>
+                <div style={{ position: 'relative' }}>
+                    <div style={{ 
+                        height: 56, 
+                        width: 56, 
+                        borderRadius: '50%', 
+                        border: '4px solid #dbeafe', 
+                        borderTopColor: '#3b82f6'
+                    }} className="animate-spin" />
                 </div>
-                <p className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-slate-800">Constructing Lineage Hierarchy</p>
-                <p className="text-[10px] text-slate-400 mt-2 font-medium">Fetching immutable history from ledger...</p>
+                <p style={{ 
+                    marginTop: 24, 
+                    fontSize: '0.875rem', 
+                    fontWeight: 700, 
+                    color: '#64748b', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.1em' 
+                }}>Generating Hierarchy...</p>
             </div>
         )
     }
 
     if (error) {
         return (
-            <div className="h-[400px] flex flex-col items-center justify-center text-rose-500 gap-4 w-full bg-rose-50/50 rounded-[2rem] border-2 border-dashed border-rose-200">
-                <div className="p-4 bg-white rounded-2xl shadow-xl shadow-rose-100/50">
-                    <AlertCircle className="h-10 w-10 text-rose-500" />
+            <div style={{
+                height: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 16,
+                width: '100%',
+                background: 'rgba(254, 242, 242, 0.3)',
+                borderRadius: '2.5rem',
+                border: '2px dashed #fecaca'
+            }}>
+                <div style={{ padding: 16, background: '#fff', borderRadius: '1rem', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
+                    <AlertCircle size={32} color="#f87171" />
                 </div>
-                <div className="text-center">
-                    <p className="font-black text-slate-800 text-sm uppercase tracking-widest">Protocol Sync Failed</p>
-                    <p className="text-xs font-medium mt-1 text-rose-600/80">{error}</p>
+                <div style={{ textAlign: 'center' }}>
+                    <p style={{ fontWeight: 700, color: '#334155' }}>Hierarchy Sync Failed</p>
+                    <p style={{ fontSize: '0.75rem', color: '#ef4444', opacity: 0.8, marginTop: 4 }}>{error}</p>
                 </div>
                 <button 
                     onClick={() => fetchTree()}
-                    className="mt-2 px-6 py-2 bg-white border border-rose-200 text-rose-600 rounded-full text-xs font-bold hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                    style={{
+                        marginTop: 8,
+                        padding: '8px 24px',
+                        background: '#fff',
+                        border: '1px solid #e2e8f0',
+                        color: '#475569',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        transition: 'all 0.2s'
+                    }}
                 >
-                    Retry Handshake
+                    Retry
                 </button>
             </div>
         )
@@ -255,35 +465,80 @@ export function LandLineageTree({
 
     if (!nodes.length) {
         return (
-            <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground/60 gap-4 w-full bg-slate-50/50 rounded-[2rem] border-2 border-dashed border-slate-200">
-                <div className="p-4 bg-white rounded-2xl shadow-xl shadow-slate-100/50">
-                    <HistoryIcon className="h-10 w-10 text-slate-300" />
-                </div>
-                <div className="text-center">
-                    <p className="font-black text-slate-800 text-sm uppercase tracking-[0.2em]">Zero-State Lineage</p>
-                    <p className="text-xs font-medium mt-1">No historical parent or child nodes detected on ledger</p>
+            <div style={{
+                height: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 16,
+                width: '100%',
+                background: 'rgba(248, 250, 252, 0.3)',
+                borderRadius: '2.5rem',
+                border: '2px dashed #e2e8f0'
+            }}>
+                <HistoryIcon size={40} color="#cbd5e1" style={{ opacity: 0.2 }} />
+                <div style={{ textAlign: 'center' }}>
+                    <p style={{ fontWeight: 700, color: '#64748b' }}>No Lineage History</p>
+                    <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 4 }}>This record appears to be a primary parent record</p>
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="relative group">
-            {/* Visual Controls Layer */}
-            <div className="absolute top-6 left-6 z-10 flex flex-col gap-3">
-                <div className="flex flex-col gap-2 p-4 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200 shadow-2xl shadow-slate-200/50">
-                    <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Active Parcel</span>
+        <div style={{ position: 'relative' }}>
+            {/* Visual Legend */}
+            <div style={{ 
+                position: 'absolute', 
+                top: 32, 
+                left: 32, 
+                zIndex: 10,
+                display: 'block'
+            }}>
+                <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: 12, 
+                    padding: 20, 
+                    background: 'rgba(255, 255, 255, 0.8)', 
+                    backdropFilter: 'blur(8px)', 
+                    borderRadius: '1.5rem', 
+                    border: '1px solid rgba(226, 232, 240, 0.6)', 
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' 
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ 
+                            width: 14, 
+                            height: 14, 
+                            borderRadius: '50%', 
+                            background: '#48bb78', 
+                            boxShadow: '0 0 10px rgba(72, 187, 120, 0.4)' 
+                        }} />
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Parcel</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full bg-slate-300" />
-                        <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Historical / Parent</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ 
+                            width: 14, 
+                            height: 14, 
+                            borderRadius: '50%', 
+                            background: '#feb2b2', 
+                            boxShadow: '0 0 10px rgba(254, 178, 178, 0.4)' 
+                        }} />
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Historical / Parent</span>
                     </div>
                 </div>
             </div>
 
-            <div className="h-[700px] w-full bg-[#f8fafc] rounded-[2rem] overflow-hidden border-2 border-slate-200/50 shadow-inner group-hover:border-emerald-500/20 transition-colors duration-500">
+            <div style={{ 
+                height: 750, 
+                width: '100%', 
+                background: '#fdfdfd', 
+                borderRadius: '3rem', 
+                overflow: 'hidden', 
+                border: '1px solid #f1f5f9', 
+                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.02)' 
+            }}>
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -291,28 +546,33 @@ export function LandLineageTree({
                     onEdgesChange={onEdgesChange}
                     nodeTypes={nodeTypes}
                     fitView
+                    fitViewOptions={{ padding: 0.4 }}
                     proOptions={{ hideAttribution: true }}
-                    minZoom={0.2}
+                    minZoom={0.1}
                     maxZoom={1.5}
                     nodesDraggable={true}
+                    zoomOnScroll={true}
+                    panOnDrag={true}
                 >
                     <Background 
-                        variant={BackgroundVariant.Lines} 
-                        gap={40} 
-                        size={1} 
+                        variant={BackgroundVariant.Dots} 
+                        gap={24} 
+                        size={1.5} 
                         color="#e2e8f0" 
-                        className="opacity-50"
                     />
                     <Controls 
-                        className="!bg-white !border-slate-200 !rounded-xl !shadow-2xl !bottom-6 !right-6" 
+                        style={{ 
+                            background: 'rgba(255, 255, 255, 0.8)', 
+                            backdropFilter: 'blur(8px)', 
+                            border: '1px solid #e2e8f0', 
+                            borderRadius: '1rem', 
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                            margin: 32 
+                        }} 
                         showInteractive={false} 
                     />
                 </ReactFlow>
             </div>
-            
-            {/* Decorative Grid Corners */}
-            <div className="absolute -top-1 -left-1 w-12 h-12 border-t-2 border-l-2 border-emerald-500/30 rounded-tl-[2rem] pointer-events-none" />
-            <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-2 border-r-2 border-emerald-500/30 rounded-br-[2rem] pointer-events-none" />
         </div>
     )
 }

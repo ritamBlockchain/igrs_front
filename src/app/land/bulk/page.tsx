@@ -23,9 +23,9 @@ import {
 import Link from "next/link";
 import { useData } from "@/context/DataContext";
 import api, { LandRecord } from "@/lib/api";
+import { keccak256, toUtf8Bytes } from "ethers";
 import CONFIG from "@/lib/config";
 import jsPDF from "jspdf";
-import { keccak256 } from "ethers";
 
 type IngestionStatus = 'idle' | 'parsing' | 'ready' | 'uploading' | 'completed' | 'error';
 
@@ -72,14 +72,35 @@ export default function BulkOperationsPage() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Keccak256 Hash Generation ---
-  const generateKeccak256Hash = (record: ParsedRecord): string => {
-    // Convert record to a deterministic string for hashing
-    const recordString = JSON.stringify(record, Object.keys(record).sort());
-    // Convert string to UTF-8 bytes, then to hex for keccak256
-    const encoder = new TextEncoder();
-    const data = encoder.encode(recordString);
-    return keccak256(data);
+  // Keccak256 hash generation for metadata (matches Polygon/EVM standard)
+  const generateMetadataHash = async (record: ParsedRecord): Promise<string> => {
+    try {
+      // Normalization: In bulk preview, records are 'pending'. On-chain they become 'ACTIVE'.
+      const normalizedStatus = (record.status || 'pending').toUpperCase() === 'PENDING' ? 'ACTIVE' : (record.status || 'ACTIVE');
+
+      // 13-field canonical structure matching user's specific JSON schema for Polygon/EVM parity
+      const payload = {
+        record_id: record.record_id,
+        status: normalizedStatus,
+        owner_name: (record.owner_name || '').trim(),
+        father_name: (record.father_name || '').trim(),
+        owner_id: (record.owner_id || '').trim(),
+        survey_no: (record.survey_no || '').trim(),
+        khasra_no: (record.khasra_no || '').trim(),
+        area_sq_m: (record.area_sq_m?.toString() || '').trim(),
+        land_type: (record.land_type || '').trim(),
+        village_name: (record.village_name || '').trim(),
+        'tehsil/taluka': (record['tehsil/taluka'] || '').trim(),
+        district_name: (record.district_name || '').trim(),
+        ownership_type: (record.ownership_type || '').trim(),
+      };
+      
+      const recordString = JSON.stringify(payload);
+      return keccak256(toUtf8Bytes(recordString)).replace('0x', '');
+    } catch (err) {
+      console.error('Hash error:', err);
+      return '';
+    }
   };
 
   // --- CSV Ingestion Logic ---
@@ -90,7 +111,7 @@ export default function BulkOperationsPage() {
 
     setIngestionStatus('parsing');
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
         const lines = text.split('\n').filter(line => line.trim() !== '');
@@ -99,7 +120,7 @@ export default function BulkOperationsPage() {
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
         const rows = lines.slice(1);
 
-        const data: ParsedRecord[] = rows.map(row => {
+        const data: ParsedRecord[] = await Promise.all(rows.map(async row => {
           const values = row.split(',').map(v => v.trim());
           const record: any = {};
           headers.forEach((header, i) => {
@@ -125,11 +146,11 @@ export default function BulkOperationsPage() {
             status: 'pending'
           };
 
-          // Generate keccak256 hash for the record
-          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+          // Generate hash for the record (Metadata Hash)
+          parsedRecord.keccak256_hash = await generateMetadataHash(parsedRecord);
 
           return parsedRecord;
-        });
+        }));
 
         // Log the JSON conversion
         console.log('CSV converted to JSON:', JSON.stringify(data, null, 2));
@@ -155,32 +176,32 @@ export default function BulkOperationsPage() {
     if (!file) return;
     setIngestionStatus('parsing');
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
         const records = Array.isArray(json) ? json : [json];
-        const data: ParsedRecord[] = records.map((r: any) => {
+        const data: ParsedRecord[] = await Promise.all(records.map(async (r: any) => {
           const parsedRecord: ParsedRecord = {
             record_id: r.record_id || `JSON-${Math.floor(Math.random() * 1000)}`,
-            owner_name: r.owner_name || 'N/A',
-            father_name: r.father_name || '',
-            owner_id: r.owner_id || 'N/A',
-            survey_no: r.survey_no || '-',
-            khasra_no: r.khasra_no || '-',
-            area_sq_m: r.area || 0,
-            land_type: r.land_type || 'JSON Record',
-            village_name: r.village_name || '-',
-            'tehsil/taluka': r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || '-',
+            owner_name: r.owner_name || r.ownerName || r.owner || 'N/A',
+            father_name: r.father_name || r.fatherName || '',
+            owner_id: r.owner_id || r.ownerId || 'N/A',
+            survey_no: r.survey_no || r.surveyNumber || '-',
+            khasra_no: r.khasra_no || r.khasraNumber || '-',
+            area_sq_m: parseFloat(r.area) || parseFloat(r.area_sq_m) || 0,
+            land_type: r.land_type || r.landType || 'JSON Record',
+            village_name: r.village_name || r.village || '-',
+            'tehsil/taluka': r['tehsil/taluka'] || r.tehsil_name || r.taluka_name || r.tehsil || r.taluka || r.block_name || '-',
             district_name: r.district_name || r.district || '-',
-            ownership_type: r.ownership_type || r.ownership || r.ownershiptype || 'Full Ownership',
+            ownership_type: r.ownership_type || r.ownership || r.ownershipType || 'Full Ownership',
             status: 'pending'
           };
 
-          // Generate keccak256 hash for the record
-          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+          // Generate SHA-256 hash for the record
+          parsedRecord.keccak256_hash = await generateMetadataHash(parsedRecord);
 
           return parsedRecord;
-        });
+        }));
 
         // Log the JSON conversion
         console.log('JSON uploaded:', JSON.stringify(data, null, 2));
@@ -226,23 +247,23 @@ export default function BulkOperationsPage() {
         const f = result.extraction.fields;
         const data: ParsedRecord = {
           record_id: f.record_id || `PDF-${Math.floor(Math.random() * 1000)}`,
-          owner_name: f.owner_name || 'N/A',
-          father_name: f.father_name || '',
-          owner_id: f.owner_id || 'N/A',
-          survey_no: f.survey_no || '-',
-          khasra_no: f.khasra_no || '-',
-          area_sq_m: parseFloat(f.area) || 0,
-          land_type: f.land_type || 'PDF Record',
-          village_name: f.village_name || '-',
-          'tehsil/taluka': f.taluka_name || f.block_name || '-',
-          district_name: f.district_name || '-',
-          ownership_type: f.ownership_type || 'Full Ownership',
+          owner_name: f.owner_name || f.ownerName || 'N/A',
+          father_name: f.father_name || f.fatherName || '',
+          owner_id: f.owner_id || f.ownerId || 'N/A',
+          survey_no: f.survey_no || f.surveyNumber || '-',
+          khasra_no: f.khasra_no || f.khasraNumber || '-',
+          area_sq_m: parseFloat(f.area_sq_m) || parseFloat(f.area) || 0,
+          land_type: f.land_type || f.landType || 'PDF Record',
+          village_name: f.village_name || f.village || '-',
+          'tehsil/taluka': f['tehsil/taluka'] || f.taluka_name || f.tehsil || f.taluka || f.block_name || '-',
+          district_name: f.district_name || f.district || '-',
+          ownership_type: f.ownership_type || f.ownershipType || 'Full Ownership',
           status: 'pending',
           ocr_session_id: result.session_id
         };
 
-        // Generate keccak256 hash for the record
-        data.keccak256_hash = generateKeccak256Hash(data);
+        // Generate SHA-256 hash for the record
+        data.keccak256_hash = await generateMetadataHash(data);
 
         // Log the PDF extraction
         console.log('PDF extracted:', JSON.stringify(data, null, 2));
@@ -291,7 +312,7 @@ export default function BulkOperationsPage() {
       
       const result = await response.json();
       if (result.ok && Array.isArray(result.rows)) {
-        const data: ParsedRecord[] = result.rows.map((r: any) => {
+        const data: ParsedRecord[] = await Promise.all(result.rows.map(async (r: any) => {
           const parsedRecord: ParsedRecord = {
             record_id: r.record_id || `DB-${Math.floor(Math.random() * 1000)}`,
             owner_name: r.owner_name || 'N/A',
@@ -308,11 +329,11 @@ export default function BulkOperationsPage() {
             status: 'pending'
           };
 
-          // Generate keccak256 hash for the record
-          parsedRecord.keccak256_hash = generateKeccak256Hash(parsedRecord);
+          // Generate SHA-256 hash for the record
+          parsedRecord.keccak256_hash = await generateMetadataHash(parsedRecord);
 
           return parsedRecord;
-        });
+        }));
 
         // Log the DB sync
         console.log('DB sync completed:', JSON.stringify(data, null, 2));
@@ -390,7 +411,8 @@ export default function BulkOperationsPage() {
             doc_type: record.land_type,
             village_name: record.village_name,
             taluka_name: record['tehsil/taluka'],
-            district_name: record.district_name
+            district_name: record.district_name,
+            ownership_type: record.ownership_type
           })
         });
       } else {
@@ -467,7 +489,7 @@ export default function BulkOperationsPage() {
   const viewMerkleHash = (record: ParsedRecord) => {
     const hash = record.keccak256_hash;
     if (hash) {
-      alert(`Merkle Hash for ${record.record_id}:\n\n${hash}`);
+      alert(`Record Metadata Hash (Keccak-256):\n\n${hash}`);
     } else {
       alert(`No merkle hash generated for ${record.record_id}`);
     }

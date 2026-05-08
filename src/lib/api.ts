@@ -220,6 +220,33 @@ export const api = {
       body: JSON.stringify({ record_id: recordId, input_document_hash: inputDocumentHash }),
     }),
 
+  verifyLandDocument: (recordId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('record_id', recordId);
+    formData.append('file', file);
+    return fetch(`${API_BASE_URL}/api/land/verify-document`, {
+      method: 'POST',
+      body: formData,
+    }).then(async res => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Verification failed: ${text}`);
+      }
+      return res.json() as Promise<{
+        success: boolean;
+        verification: {
+          hash_match: boolean;
+          document_hash: string;
+          blockchain_doc_hash: string;
+          record_hash: string;
+          blockchain_record_hash: string;
+          fields_extracted: any;
+          ocr_confidence: any;
+        }
+      }>;
+    });
+  },
+
   setInitialOwner: (recordId: string, ownerName: string, ownerHash: string) => 
     apiFetch<{ ok: boolean; message?: string }>('/api/land/set-initial-owner', {
       method: 'POST',
@@ -468,6 +495,7 @@ export const api = {
     survey_no: string;
     area: string;
     doc_type: string;
+    ownership_type: string;
     uploaded_by: string;
     role: string;
   }) => 

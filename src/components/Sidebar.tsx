@@ -35,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Jantri Rates', icon: TrendingUp, path: '/jantri', roles: ['Admin', 'Revenue Admin', 'IGR'] },
   { name: 'Documents', icon: FileBox, path: '/documents', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Audit Trail', icon: ShieldCheck, path: '/audit', roles: ['Admin', 'Auditor', 'IGR'] },
+  { name: 'Verify Record', icon: ShieldCheck, path: '/verify', roles: ['*'] },
   { name: 'Anchors', icon: Layers, path: '/anchors', roles: ['Admin', 'Auditor', 'IGR'] },
   { name: 'Batches', icon: Package, path: '/batches', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Settings', icon: Settings, path: '/settings', roles: ['Admin'] },
@@ -54,7 +55,7 @@ export default function Sidebar() {
   const mainNav = filtered.filter(i => ['/', '/land/register', '/land/bulk', '/land/records'].includes(i.path));
   const mutations = filtered.filter(i => i.path.startsWith('/mutations') || i.path === '/freeze');
   const privateData = filtered.filter(i => i.path.startsWith('/private'));
-  const system = filtered.filter(i => ['/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path));
+  const system = filtered.filter(i => ['/verify', '/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path));
 
   return (
     <aside className={styles.sidebar}>

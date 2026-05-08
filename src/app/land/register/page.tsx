@@ -48,16 +48,17 @@ export default function RegisterLandPage() {
         setOcrSessionId(res.session_id);
         const f = res.extraction.fields;
         return {
-          surveyNo: f.survey_no || '',
-          khasraNo: f.khasra_no || '',
-          village: f.village_name || '',
-          tehsil: f.block_name || f.taluka_name || '',
-          district: f.district_name || '',
-          area: f.area || '',
-          landType: f.land_type || '',
-          docType: f.doc_type || '',
-          ownerId: f.owner_name || '',
-          fatherName: f.father_name || '',
+          surveyNo: f.survey_no || f.surveyNumber || '',
+          khasraNo: f.khasra_no || f.khasraNumber || '',
+          village: f.village_name || f.village || '',
+          tehsil: f['tehsil/taluka'] || f.tehsil_name || f.taluka_name || f.tehsil || f.taluka || f.block_name || '',
+          district: f.district_name || f.district || '',
+          area: f.area_sq_m || f.area || '',
+          landType: f.land_type || f.landType || '',
+          docType: f.doc_type || f.documentType || '',
+          ownerId: f.owner_name || f.ownerName || '',
+          fatherName: f.father_name || f.fatherName || '',
+          ownershipType: f.ownership_type || f.ownershipType || '',
         };
       }
       return {};
@@ -460,11 +461,12 @@ export default function RegisterLandPage() {
                       district_id: 0,
                       block_id: 0,
                       taluka_id: 0,
-                      owner_name: formData.ownerId, // owner_name mapped to ownerId in UI
+                      owner_name: formData.ownerId, // ownerId field in UI is actually ownerName
                       father_name: formData.fatherName,
                       survey_no: formData.surveyNo,
                       area: formData.area,
                       doc_type: formData.docType,
+                      ownership_type: formData.ownershipType,
                       uploaded_by: 'Revenue Admin',
                       role: role || 'Revenue Admin',
                     });

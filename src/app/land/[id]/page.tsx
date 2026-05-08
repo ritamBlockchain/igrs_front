@@ -3,8 +3,8 @@
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Shield, MapPin, User, Clock, Hash, CheckCircle, FileText, History, AlertTriangle, RefreshCw, Upload, X, FileImage, File } from "lucide-react";
-import { api } from "@/lib/api";
-import { keccak256 } from "ethers";
+import api from "@/lib/api";
+import { keccak256, toUtf8Bytes } from "ethers";
 import { useRole } from "@/context/RoleContext";
 import { LandLineageTree } from "@/components/LandLineageTree";
 import CONFIG from "@/lib/config";
@@ -80,31 +80,43 @@ export default function LandDetailPage() {
   };
 
   const handleVerify = async () => {
-    if (!verifyHash) {
-      setVerifyResult({ success: false, message: 'Please enter a document hash to verify' });
+    if (!verifyHash && !uploadedFile) {
+      setVerifyResult({ success: false, message: 'Please enter a document hash or upload a file to verify' });
       return;
     }
     
     setVerifying(true);
     setVerifyResult(null);
     try {
-      const res = await api.verifyLandRecord(id, verifyHash);
-      const data = typeof res.result === 'string' ? JSON.parse(res.result) : res.result;
-      
-      if (data.valid || data.Valid) {
-        setVerifyResult({ 
-          success: true, 
-          message: 'Verification Successful! The document hash matches the immutable ledger record.',
-          data 
-        });
+      let res;
+      if (uploadedFile) {
+        res = await api.verifyLandDocument(id as string, uploadedFile);
       } else {
-        setVerifyResult({ 
-          success: false, 
-          message: 'Verification Failed. The document hash does not match the ledger record.',
-          data
-        });
+        res = await api.verifyLandRecord(id as string, verifyHash);
       }
+
+      console.log("[Verification] Backend Response:", res);
+      
+      const success = res.success;
+      const details = res.verification_details || {};
+      
+      if (res.extracted_metadata) {
+        console.log("[Verification] Extracted OCR Metadata:", res.extracted_metadata);
+        console.log("[Verification] Computed Record Hash:", res.computed_record_hash);
+      }
+
+      setVerifyResult({ 
+        success: !!success, 
+        message: success 
+          ? 'Verification Successful! The document data matches the Polygon immutable anchor.' 
+          : 'Verification Failed. The provided document data does not match the blockchain records.',
+        data: {
+          ...res,
+          verification: details // For backward compatibility with UI components
+        }
+      });
     } catch (err) {
+      console.error("[Verification] Error:", err);
       setVerifyResult({ 
         success: false, 
         message: err instanceof Error ? err.message : 'Verification failed to execute on the network' 
@@ -114,23 +126,54 @@ export default function LandDetailPage() {
     }
   };
 
-  // Keccak256 hash generation function
+  // Keccak256 hash generation for metadata (matches Polygon/EVM standard)
+  const generateMetadataHash = async (text: string): Promise<string> => {
+    try {
+      return keccak256(toUtf8Bytes(text)).replace('0x', '');
+    } catch (err) {
+      console.error('Keccak error:', err);
+      return '';
+    }
+  };
+
+  // Keccak256 hash generation function (for document file hash)
   const generateKeccak256Hash = async (text: string): Promise<string> => {
-    return keccak256(text);
+    try {
+      // Try standard UTF-8 encoding first
+      return keccak256(toUtf8Bytes(text));
+    } catch (err) {
+      console.warn('UTF-8 hash failed, falling back to basic encoding:', err);
+      // Fallback: manually convert to bytes (safe for most characters)
+      const bytes = new Uint8Array(text.length);
+      for (let i = 0; i < text.length; i++) {
+        bytes[i] = text.charCodeAt(i) & 0xff;
+      }
+      return keccak256(bytes);
+    }
   };
 
   // OCR extraction placeholder function
-  const extractTextFromOCR = async (file: File): Promise<string> => {
-    // This is a placeholder - will be replaced with actual OCR implementation
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        // Placeholder: return file content as text
-        // In production, this would call the OCR API
-        resolve(`OCR extracted text from ${file.name} - Implementation pending`);
+  const extractTextFromOCR = async (file: File): Promise<{text: string, fields: any}> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/pdf-ocr`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OCR extraction failed (${res.status}): ${errText}`);
+      }
+      const data = await res.json();
+      return { 
+        text: data.text || '', 
+        fields: data.fields || {} 
       };
-      reader.readAsText(file);
-    });
+    } catch (err) {
+      console.error('OCR error:', err);
+      throw err;
+    }
   };
 
   // Handle file selection
@@ -146,18 +189,49 @@ export default function LandDetailPage() {
     setVerifyResult(null);
 
     try {
-      // Extract text from OCR (placeholder)
-      const text = await extractTextFromOCR(file);
+      // Extract text and fields from OCR
+      const { text, fields } = await extractTextFromOCR(file);
       setExtractedText(text);
 
-      // Generate keccak256 hash
-      const hash = await generateKeccak256Hash(text);
-      setVerifyHash(hash);
+      // If we have fields, generate the 13-field canonical hash (matches backend/blockchain)
+      if (fields && fields.owner_name && fields.owner_name !== '') {
+        // Normalization: Certificates often say PENDING because they are generated during ingestion.
+        // On-chain records are ACTIVE. To match, we normalize PENDING -> ACTIVE for verification.
+        const normalizedStatus = (fields.status || 'PENDING').toUpperCase() === 'PENDING' ? 'ACTIVE' : (fields.status || 'ACTIVE');
 
-      setVerifyResult({ 
-        success: true, 
-        message: `File processed successfully. Hash generated from OCR extracted content.` 
-      });
+        const payload = {
+          record_id: fields.record_id || (id as string),
+          status: normalizedStatus,
+          owner_name: (fields.owner_name || '').trim(),
+          father_name: (fields.father_name || '').trim(),
+          owner_id: (fields.owner_id || '').trim(),
+          survey_no: (fields.survey_no || '').trim(),
+          khasra_no: (fields.khasra_no || '').trim(),
+          area_sq_m: (fields.area_sq_m || fields.area || '').trim(),
+          land_type: (fields.land_type || '').trim(),
+          village_name: (fields.village_name || '').trim(),
+          'tehsil/taluka': (fields['tehsil/taluka'] || fields.block_name || '').trim(),
+          district_name: (fields.district_name || '').trim(),
+          ownership_type: (fields.ownership_type || '').trim(),
+        };
+        const canonicalJSON = JSON.stringify(payload);
+        const hash = await generateMetadataHash(canonicalJSON);
+        setVerifyHash(hash);
+        
+        setVerifyResult({ 
+          success: true, 
+          message: `Document processed. Metadata fields extracted and Keccak-256 hash generated (Normalized Status: ${normalizedStatus}).` 
+        });
+      } else {
+        // Fallback to hashing raw text if no fields extracted
+        const cleanText = text.substring(0, 1000).replace(/[\x00-\x1F\x7F-\x9F]/g, "");
+        const hash = await generateKeccak256Hash(cleanText);
+        setVerifyHash(hash);
+        setVerifyResult({ 
+          success: true, 
+          message: `Document processed, but no structured fields were found. Hash generated from raw text.` 
+        });
+      }
     } catch (err) {
       setVerifyResult({ 
         success: false, 
@@ -397,13 +471,13 @@ export default function LandDetailPage() {
             )}
             {record.tx_hash && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--success)', textTransform: 'uppercase', marginBottom: 6 }}>✓ Transaction Hash (Fabric Ledger)</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--primary)', textTransform: 'uppercase', marginBottom: 6 }}>✓ Record Anchored (Polygon PoS)</div>
                 <div className="mono" style={{ padding: '10px 14px', background: 'var(--slate-50)', borderRadius: 8, color: 'var(--slate-600)', wordBreak: 'break-all', fontSize: 12 }}>{record.tx_hash}</div>
               </div>
             )}
-            {(record.anchor_status === 'anchored' || record.is_anchored) && (
+            {(record.anchor_status === 'anchored' || record.is_anchored || record.tx_hash) && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>This record is anchored on the Hyperledger Fabric blockchain</div>
+                <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>This record metadata is verified against the Polygon Public Blockchain for immutable proof of integrity.</div>
               </div>
             )}
           </div>
@@ -558,7 +632,23 @@ export default function LandDetailPage() {
               {extractedText && (
                 <div style={{ marginTop: 16, padding: 16, background: 'var(--blue-50)', borderRadius: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>OCR Extracted Content:</div>
-                  <div style={{ fontSize: 12, color: 'var(--blue-800)', wordBreak: 'break-word' }}>{extractedText}</div>
+                  <div style={{ 
+                    fontSize: 12, 
+                    color: 'var(--blue-800)', 
+                    wordBreak: 'break-word',
+                    maxHeight: 150,
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'monospace'
+                  }}>
+                    {extractedText.startsWith('%PDF') ? (
+                      <div style={{ color: 'var(--blue-400)', fontStyle: 'italic' }}>
+                        [PDF Binary Stream Detected - No direct text found. Falling back to pattern-based field extraction...]
+                      </div>
+                    ) : (
+                      extractedText
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -606,22 +696,55 @@ export default function LandDetailPage() {
               </p>
               {verifyResult.data && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Ledger Version Checked
-                  </div>
-                  <div style={{ fontSize: 13, color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)' }}>
-                    v{verifyResult.data.version || verifyResult.data.Version}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 8 }}>
+                    Metadata Verification Details
                   </div>
                   
-                  {verifyResult.data.lastTxId && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginTop: 12, marginBottom: 4 }}>
-                        Transaction Hash
+                  {verifyResult.data.extracted_metadata && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                      {Object.entries(verifyResult.data.extracted_metadata).map(([key, val]) => (
+                        <div key={key} style={{ fontSize: 11 }}>
+                          <span style={{ color: 'var(--slate-500)' }}>{key.replace(/_/g, ' ')}:</span>
+                          <span style={{ fontWeight: 600, marginLeft: 4 }}>{String(val)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
+                    Computed Document Hash (Leaf)
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', marginBottom: 12 }}>
+                    {verifyResult.data.computed_record_hash}
+                  </div>
+
+                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--blue-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
+                    On-Chain Record Hash (Polygon Chain)
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--blue-800)' : 'var(--red-800)', marginBottom: 12 }}>
+                    {verifyResult.data.verification_details?.anchored_hash || 'Record Not Found on Polygon'}
+                  </div>
+
+                  {verifyResult.data.verification_details && verifyResult.data.verification_details.merkle_root && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--blue-600)', textTransform: 'uppercase', marginBottom: 8 }}>
+                        Public Anchor Proof (Polygon)
                       </div>
-                      <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)' }}>
-                        {verifyResult.data.lastTxId || verifyResult.data.LastTxID}
+                      
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
+                        Merkle Root Hash
                       </div>
-                    </>
+                      <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)', marginBottom: 12 }}>
+                        {verifyResult.data.verification_details.merkle_root}
+                      </div>
+
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
+                        Polygon Transaction Hash
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)' }}>
+                        {verifyResult.data.verification_details.polygon_tx}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
