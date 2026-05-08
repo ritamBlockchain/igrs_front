@@ -26,6 +26,9 @@ export default function LandDetailPage() {
   const [verifyHash, setVerifyHash] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{success: boolean, message: string, data?: any} | null>(null);
+  const [verifierName, setVerifierName] = useState('');
+  const [verifierPhone, setVerifierPhone] = useState('');
+  const [identityVerified, setIdentityVerified] = useState(false);
 
   
   // File upload state
@@ -352,7 +355,8 @@ export default function LandDetailPage() {
   ];
 
   return (
-    <div className="animate-in">
+    <>
+      <div className="animate-in">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1>📄 {record.record_id || id}</h1>
@@ -576,179 +580,199 @@ export default function LandDetailPage() {
             Upload a PDF or image document to verify against the on-chain record. The system will extract content via OCR and generate a keccak256 hash for verification.
           </p>
 
-          {/* File Upload Zone */}
-          {!uploadedFile ? (
-            <div
-              style={{
-                border: `2px dashed ${isDragging ? 'var(--blue-400)' : 'var(--slate-200)'}`,
-                background: isDragging ? 'var(--blue-50)' : 'var(--slate-50)',
-                padding: '60px 40px',
-                textAlign: 'center',
-                borderRadius: 16,
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                marginBottom: 24
-              }}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={handleBrowseClick}
-            >
-              <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-                <Upload size={40} className="text-blue-600" />
-              </div>
-              <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                {isDragging ? 'Drop file here' : 'Upload Document'}
-              </h4>
-              <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 16 }}>
-                Drag and drop a PDF or image file, or click to browse
-              </p>
-              <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>
-                Supported formats: PDF, JPEG, PNG
-              </div>
-            </div>
-          ) : (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ background: 'var(--slate-50)', padding: 20, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ background: 'white', width: 60, height: 60, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {uploadedFile.type === 'application/pdf' ? <File size={32} className="text-red-500" /> : <FileImage size={32} className="text-blue-500" />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {uploadedFile.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>
-                    {(uploadedFile.size / 1024).toFixed(2)} KB
-                  </div>
-                </div>
-                <button
-                  onClick={clearFile}
-                  style={{ padding: 8, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate-500)' }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {extractedText && (
-                <div style={{ marginTop: 16, padding: 16, background: 'var(--blue-50)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>OCR Extracted Content:</div>
-                  <div style={{ 
-                    fontSize: 12, 
-                    color: 'var(--blue-800)', 
-                    wordBreak: 'break-word',
-                    maxHeight: 150,
-                    overflowY: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    fontFamily: 'monospace'
-                  }}>
-                    {extractedText.startsWith('%PDF') ? (
-                      <div style={{ color: 'var(--blue-400)', fontStyle: 'italic' }}>
-                        [PDF Binary Stream Detected - No direct text found. Falling back to pattern-based field extraction...]
-                      </div>
-                    ) : (
-                      extractedText
-                    )}
-                  </div>
-                </div>
-              )}
+          {/* Show placeholder if not verified - actual content will be shown after modal */}
+          {!identityVerified && (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--slate-400)' }}>
+              <User size={48} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
+              <p>Please verify your identity to continue</p>
             </div>
           )}
 
-          {/* Manual Hash Input */}
-          <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--slate-100)' }}>
-            <label className="label">Or enter document hash manually (Keccak256)</label>
-            <input 
-              className="input mono" 
-              placeholder="Enter 64-character hex hash to verify..." 
-              style={{ marginBottom: 16 }} 
-              value={verifyHash}
-              onChange={(e) => setVerifyHash(e.target.value)}
-            />
-          </div>
-
-          <button 
-            className="btn btn-primary" 
-            onClick={handleVerify}
-            disabled={verifying || !verifyHash}
-            style={{ width: '100%' }}
-          >
-            {verifying ? (
-              <><RefreshCw size={16} className="spin" /> Verifying...</>
-            ) : (
-              <><Shield size={16} /> Verify Against Ledger</>
-            )}
-          </button>
-
-          {verifyResult && (
-            <div style={{ 
-              marginTop: 24, 
-              padding: 16, 
-              borderRadius: 8, 
-              background: verifyResult.success ? 'var(--green-50)' : 'var(--red-50)',
-              border: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}`
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: verifyResult.success ? 'var(--green-700)' : 'var(--red-700)', fontWeight: 600, marginBottom: 8 }}>
-                {verifyResult.success ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
-                {verifyResult.success ? 'Valid Record' : 'Invalid Match'}
+          {/* File Upload Zone - Only shown after identity verification */}
+          {identityVerified && (
+            <>
+              <div style={{ background: 'var(--blue-50)', padding: 12, borderRadius: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle size={16} className="text-blue-600" />
+                <span style={{ fontSize: 13, color: 'var(--blue-700)' }}>
+                  Verified: {verifierName} ({verifierPhone})
+                </span>
               </div>
-              <p style={{ fontSize: 13, color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', margin: 0 }}>
-                {verifyResult.message}
+
+              <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 20 }}>
+                Upload a PDF or image document to verify against the on-chain record. The system will extract content via OCR and generate a keccak256 hash for verification.
               </p>
-              {verifyResult.data && (
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 8 }}>
-                    Metadata Verification Details
+
+              {/* File Upload Zone */}
+              {!uploadedFile ? (
+                <div
+                  style={{
+                    border: `2px dashed ${isDragging ? 'var(--blue-400)' : 'var(--slate-200)'}`,
+                    background: isDragging ? 'var(--blue-50)' : 'var(--slate-50)',
+                    padding: '60px 40px',
+                    textAlign: 'center',
+                    borderRadius: 16,
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    marginBottom: 24
+                  }}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={handleBrowseClick}
+                >
+                  <div style={{ background: 'white', width: 80, height: 80, borderRadius: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
+                    <Upload size={40} className="text-blue-600" />
                   </div>
-                  
-                  {verifyResult.data.extracted_metadata && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-                      {Object.entries(verifyResult.data.extracted_metadata).map(([key, val]) => (
-                        <div key={key} style={{ fontSize: 11 }}>
-                          <span style={{ color: 'var(--slate-500)' }}>{key.replace(/_/g, ' ')}:</span>
-                          <span style={{ fontWeight: 600, marginLeft: 4 }}>{String(val)}</span>
-                        </div>
-                      ))}
+                  <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                    {isDragging ? 'Drop file here' : 'Upload Document'}
+                  </h4>
+                  <p style={{ fontSize: 13, color: 'var(--slate-500)', marginBottom: 16 }}>
+                    Drag and drop a PDF or image file, or click to browse
+                  </p>
+                  <div style={{ fontSize: 12, color: 'var(--slate-400)' }}>
+                    Supported formats: PDF, JPEG, PNG
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ background: 'var(--slate-50)', padding: 20, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ background: 'white', width: 60, height: 60, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {uploadedFile.type === 'application/pdf' ? <File size={32} className="text-red-500" /> : <FileImage size={32} className="text-blue-500" />}
                     </div>
-                  )}
-
-                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Computed Document Hash (Leaf)
-                  </div>
-                  <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', marginBottom: 12 }}>
-                    {verifyResult.data.computed_record_hash}
-                  </div>
-
-                  <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--blue-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
-                    On-Chain Record Hash (Polygon Chain)
-                  </div>
-                  <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--blue-800)' : 'var(--red-800)', marginBottom: 12 }}>
-                    {verifyResult.data.verification_details?.anchored_hash || 'Record Not Found on Polygon'}
-                  </div>
-
-                  {verifyResult.data.verification_details && verifyResult.data.verification_details.merkle_root && (
-                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--blue-600)', textTransform: 'uppercase', marginBottom: 8 }}>
-                        Public Anchor Proof (Polygon)
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {uploadedFile.name}
                       </div>
-                      
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
-                        Merkle Root Hash
+                      <div style={{ fontSize: 12, color: 'var(--slate-500)' }}>
+                        {(uploadedFile.size / 1024).toFixed(2)} KB
                       </div>
-                      <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)', marginBottom: 12 }}>
-                        {verifyResult.data.verification_details.merkle_root}
-                      </div>
+                    </div>
+                    <button
+                      onClick={clearFile}
+                      style={{ padding: 8, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate-500)' }}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
 
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
-                        Polygon Transaction Hash
-                      </div>
-                      <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)' }}>
-                        {verifyResult.data.verification_details.polygon_tx}
+                  {extractedText && (
+                    <div style={{ marginTop: 16, padding: 16, background: 'var(--blue-50)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 8 }}>OCR Extracted Content:</div>
+                      <div style={{ 
+                        fontSize: 12, 
+                        color: 'var(--blue-800)', 
+                        wordBreak: 'break-word',
+                        maxHeight: 150,
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        fontFamily: 'monospace'
+                      }}>
+                        {extractedText.startsWith('%PDF') ? (
+                          <div style={{ color: 'var(--blue-400)', fontStyle: 'italic' }}>
+                            [PDF Binary Stream Detected - No direct text found. Falling back to pattern-based field extraction...]
+                          </div>
+                        ) : (
+                          extractedText
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
               )}
-            </div>
+
+              {/* Manual Hash Input */}
+              <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--slate-100)' }}>
+                <label className="label">Or enter document hash manually (Keccak256)</label>
+                <input 
+                  className="input mono" 
+                  placeholder="Enter 64-character hex hash to verify..." 
+                  style={{ marginBottom: 16 }} 
+                  value={verifyHash}
+                  onChange={(e) => setVerifyHash(e.target.value)}
+                />
+              </div>
+
+              <button 
+                className="btn btn-primary" 
+                onClick={handleVerify}
+                disabled={verifying || !verifyHash}
+                style={{ width: '100%' }}
+              >
+            {verifying ? (
+                <><RefreshCw size={16} className="spin" /> Verifying...</>
+              ) : (
+                <><Shield size={16} /> Verify Against Ledger</>
+              )}
+              </button>
+
+              {verifyResult && (
+                <div style={{ 
+                  marginTop: 24, 
+                  padding: 16, 
+                  borderRadius: 8, 
+                  background: verifyResult.success ? 'var(--green-50)' : 'var(--red-50)',
+                  border: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: verifyResult.success ? 'var(--green-700)' : 'var(--red-700)', fontWeight: 600, marginBottom: 8 }}>
+                    {verifyResult.success ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                    {verifyResult.success ? 'Valid Record' : 'Invalid Match'}
+                  </div>
+                  <p style={{ fontSize: 13, color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', margin: 0 }}>
+                    {verifyResult.message}
+                  </p>
+                  {verifyResult.data && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 8 }}>
+                        Metadata Verification Details
+                      </div>
+                      
+                      {verifyResult.data.extracted_metadata && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                          {Object.entries(verifyResult.data.extracted_metadata).map(([key, val]) => (
+                            <div key={key} style={{ fontSize: 11 }}>
+                              <span style={{ color: 'var(--slate-500)' }}>{key.replace(/_/g, ' ')}:</span>
+                              <span style={{ fontWeight: 600, marginLeft: 4 }}>{String(val)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--green-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
+                        Computed Document Hash (Leaf)
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--green-800)' : 'var(--red-800)', marginBottom: 12 }}>
+                        {verifyResult.data.computed_record_hash}
+                      </div>
+
+                      <div style={{ fontSize: 11, fontWeight: 600, color: verifyResult.success ? 'var(--blue-600)' : 'var(--red-600)', textTransform: 'uppercase', marginBottom: 4 }}>
+                        On-Chain Record Hash (Polygon Chain)
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all', color: verifyResult.success ? 'var(--blue-800)' : 'var(--red-800)', marginBottom: 12 }}>
+                        {verifyResult.data.blockchain_record_hash}
+                      </div>
+
+                      {verifyResult.data.verification_details && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${verifyResult.success ? 'var(--green-200)' : 'var(--red-200)'}` }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
+                            Merkle Root Hash
+                          </div>
+                          <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)', marginBottom: 12 }}>
+                            {verifyResult.data.verification_details.merkle_root}
+                          </div>
+
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>
+                            Polygon Transaction Hash
+                          </div>
+                          <div className="mono" style={{ fontSize: 10, wordBreak: 'break-all', color: 'var(--slate-600)' }}>
+                            {verifyResult.data.verification_details.polygon_tx}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -810,6 +834,122 @@ export default function LandDetailPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Identity Verification Modal - Shows directly when verify tab is accessed and not verified */}
+      {console.log('Modal render check:', { tab, identityVerified, shouldRender: tab === 'verify' && !identityVerified })}
+      {tab === 'verify' && !identityVerified && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'red',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            background: 'white',
+            padding: 40,
+            borderRadius: 16,
+            maxWidth: 450,
+            width: '90%',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{
+                background: 'var(--blue-50)',
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px'
+              }}>
+                <User size={32} className="text-blue-600" />
+              </div>
+              <h3 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 8px' }}>Identity Verification</h3>
+              <p style={{ fontSize: 14, color: 'var(--slate-500)', margin: 0 }}>
+                Please provide your identity information to verify land records
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--slate-700)', marginBottom: 8 }}>
+                Full Name *
+              </label>
+              <input
+                type="text"
+                value={verifierName}
+                onChange={(e) => setVerifierName(e.target.value)}
+                placeholder="Enter your full name"
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid var(--slate-200)',
+                  fontSize: 14,
+                  outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--blue-500)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--slate-200)'}
+              />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--slate-700)', marginBottom: 8 }}>
+                Phone Number *
+              </label>
+              <input
+                type="tel"
+                value={verifierPhone}
+                onChange={(e) => setVerifierPhone(e.target.value)}
+                placeholder="Enter your phone number"
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  border: '1px solid var(--slate-200)',
+                  fontSize: 14,
+                  outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--blue-500)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--slate-200)'}
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                if (verifierName.trim() && verifierPhone.trim()) {
+                  setIdentityVerified(true);
+                  console.log('Verifier Info:', { name: verifierName, phone: verifierPhone, recordId: id, timestamp: new Date().toISOString() });
+                }
+              }}
+              disabled={!verifierName.trim() || !verifierPhone.trim()}
+              className="btn btn-primary"
+              style={{
+                width: '100%',
+                padding: '14px 24px',
+                fontSize: 16,
+                borderRadius: 8,
+                fontWeight: 600
+              }}
+            >
+              Verify & Continue
+            </button>
+
+            <p style={{ fontSize: 12, color: 'var(--slate-400)', textAlign: 'center', marginTop: 16, margin: '16px 0 0' }}>
+              Your information will be stored for verification purposes
+            </p>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

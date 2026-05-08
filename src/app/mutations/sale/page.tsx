@@ -34,6 +34,7 @@ export default function SaleMutationPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
 
   // Auto-generate sale deed hash
   useEffect(() => {
@@ -57,7 +58,11 @@ export default function SaleMutationPage() {
       setResult({ success: false, message: 'All required fields must be filled' });
       return;
     }
-    
+    setShowConfirmationModal(true);
+  };
+
+  const handleConfirmCreateMutation = async () => {
+    setShowConfirmationModal(false);
     setSubmitting(true);
     setResult(null);
     try {
@@ -119,7 +124,8 @@ export default function SaleMutationPage() {
   };
 
   return (
-    <div className="animate-in">
+    <>
+      <div className="animate-in">
       <div className="page-header">
         <h1>💰 Sale Mutation Workflow</h1>
         <p>CREATED → VERIFIED_BY_TALATI → APPROVED_BY_TEHSILDAR → FINALIZED</p>
@@ -217,6 +223,147 @@ export default function SaleMutationPage() {
         </div>
       )}
     </div>
+
+    {/* Confirmation Modal */}
+    {showConfirmationModal && (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(8px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        animation: 'fadeIn 0.3s ease-out'
+      }}>
+        <div style={{
+          background: 'linear-gradient(145deg, #ffffff 0%, #f8fafc 100%)',
+          padding: 52,
+          borderRadius: 24,
+          maxWidth: 540,
+          width: '92%',
+          boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+          animation: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          border: '1px solid rgba(255, 255, 255, 0.8)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: 36 }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 50%, #fca5a5 100%)',
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 24px',
+              boxShadow: '0 8px 20px -4px rgba(220, 38, 38, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.5)',
+              animation: 'pulse 2s infinite'
+            }}>
+              <AlertTriangle size={40} style={{ color: '#dc2626', filter: 'drop-shadow(0 2px 4px rgba(220, 38, 38, 0.2))' }} />
+            </div>
+            <h3 style={{ fontSize: 32, fontWeight: 900, margin: '0 0 14px', color: '#0f172a', letterSpacing: '-0.03em', textShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>Confirm Data Authenticity</h3>
+            <p style={{ fontSize: 16, color: '#64748b', margin: 0, lineHeight: 1.7, maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
+              The data you have provided will be submitted for verification by Talati. Please ensure all information is accurate and authentic before proceeding.
+            </p>
+          </div>
+
+          <div style={{ 
+            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', 
+            padding: 24, 
+            borderRadius: 16, 
+            marginBottom: 36, 
+            border: '1px solid rgba(226, 232, 240, 0.8)',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5)'
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <div style={{ width: 32, height: 2, background: 'linear-gradient(90deg, transparent, #cbd5e1, transparent)' }}></div>
+              Transaction Details
+              <div style={{ width: 32, height: 2, background: 'linear-gradient(90deg, transparent, #cbd5e1, transparent)' }}></div>
+            </div>
+            <div style={{ fontSize: 15, color: '#334155', lineHeight: 2.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(226, 232, 240, 0.5)' }}>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Land ID</span>
+                <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>{landId}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(226, 232, 240, 0.5)' }}>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Seller</span>
+                <span style={{ fontWeight: 700, color: '#0f172a' }}>{seller}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(226, 232, 240, 0.5)' }}>
+                <span style={{ color: '#64748b', fontWeight: 600 }}>Buyer</span>
+                <span style={{ fontWeight: 700, color: '#0f172a' }}>{buyer}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', marginTop: 4, background: 'linear-gradient(90deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05))', borderRadius: 8, marginLeft: -16, marginRight: -16, marginBottom: -8 }}>
+                <span style={{ color: '#64748b', fontWeight: 700 }}>Mutation Type</span>
+                <span style={{ fontWeight: 900, color: '#3b82f6', fontSize: 16 }}>SALE</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 16 }}>
+            <button
+              onClick={() => setShowConfirmationModal(false)}
+              style={{
+                flex: 1,
+                padding: '18px 36px',
+                fontSize: 16,
+                borderRadius: 14,
+                fontWeight: 700,
+                background: 'linear-gradient(145deg, #f1f5f9, #e2e8f0)',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(145deg, #e2e8f0, #cbd5e1)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 8px 12px -1px rgba(0, 0, 0, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(145deg, #f1f5f9, #e2e8f0)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05)';
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmCreateMutation}
+              style={{
+                flex: 1,
+                padding: '18px 36px',
+                fontSize: 16,
+                borderRadius: 14,
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: '0 6px 12px -2px rgba(59, 130, 246, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+                e.currentTarget.style.boxShadow = '0 12px 24px -4px rgba(59, 130, 246, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                e.currentTarget.style.boxShadow = '0 6px 12px -2px rgba(59, 130, 246, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)';
+              }}
+            >
+              Agree & Submit
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 }
 

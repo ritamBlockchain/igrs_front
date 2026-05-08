@@ -2,6 +2,7 @@
 
 import { useRole } from "@/context/RoleContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useState } from 'react';
 import { 
   LayoutDashboard, Map, FileText, Lock, ShieldCheck, TrendingUp, 
   Layers, Settings, Gavel, Landmark, PenTool, Snowflake,
@@ -10,12 +11,14 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from './Sidebar.module.css';
+import VerificationModal from "@/components/VerificationModal";
 
 interface NavItem {
   name: string;
   icon: React.ElementType;
   path: string;
   roles: string[];
+  action?: () => void;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -35,7 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Jantri Rates', icon: TrendingUp, path: '/jantri', roles: ['Admin', 'Revenue Admin', 'IGR'] },
   { name: 'Documents', icon: FileBox, path: '/documents', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Audit Trail', icon: ShieldCheck, path: '/audit', roles: ['Admin', 'Auditor', 'IGR'] },
-  { name: 'Verify Record', icon: ShieldCheck, path: '/verify', roles: ['*'] },
+  { name: 'Verify Record', icon: ShieldCheck, path: '/verify', roles: ['*'], action: () => {} },
   { name: 'Anchors', icon: Layers, path: '/anchors', roles: ['Admin', 'Auditor', 'IGR'] },
   { name: 'Batches', icon: Package, path: '/batches', roles: ['Admin', 'Revenue Admin'] },
   { name: 'Settings', icon: Settings, path: '/settings', roles: ['Admin'] },
@@ -45,6 +48,7 @@ export default function Sidebar() {
   const { role, roleInfo, clearRole } = useRole();
   const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
 
   if (!role) return null;
 
@@ -55,7 +59,9 @@ export default function Sidebar() {
   const mainNav = filtered.filter(i => ['/', '/land/register', '/land/bulk', '/land/records'].includes(i.path));
   const mutations = filtered.filter(i => i.path.startsWith('/mutations') || i.path === '/freeze');
   const privateData = filtered.filter(i => i.path.startsWith('/private'));
-  const system = filtered.filter(i => ['/verify', '/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path));
+  const system = filtered.filter(i => ['/verify', '/jantri', '/documents', '/audit', '/anchors', '/batches', '/settings'].includes(i.path)).map(item => 
+    item.path === '/verify' ? { ...item, action: () => setIsVerifyModalOpen(true) } : item
+  );
 
   return (
     <aside className={styles.sidebar}>
@@ -91,6 +97,10 @@ export default function Sidebar() {
         )}
       </nav>
 
+      {isVerifyModalOpen && (
+        <VerificationModal onClose={() => setIsVerifyModalOpen(false)} />
+      )}
+
       <div className={styles.footer}>
         <div className={styles.roleCard}>
           <div className={styles.roleAvatar} style={{ background: roleInfo?.color || 'var(--blue-600)' }}>
@@ -119,6 +129,24 @@ function NavGroup({ items, pathname }: { items: NavItem[], pathname: string }) {
     <>
       {items.map(item => {
         const active = pathname === item.path;
+        
+        if (item.action) {
+          return (
+            <button 
+              key={item.path} 
+              onClick={(e) => {
+                e.preventDefault();
+                item.action?.();
+              }} 
+              className={`${styles.navItem} ${active ? styles.active : ''}`}
+              style={{ width: '100%', textAlign: 'left' }}
+            >
+              <item.icon size={18} />
+              <span>{item.name}</span>
+            </button>
+          );
+        }
+
         return (
           <Link key={item.path} href={item.path} className={`${styles.navItem} ${active ? styles.active : ''}`}>
             <item.icon size={18} />

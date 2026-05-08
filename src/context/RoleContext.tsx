@@ -11,6 +11,7 @@ export type UserRole =
   | 'Bank'
   | 'Legal Authority'
   | 'IGR'
+  | 'Verifier'
   | 'Admin';
 
 export interface RoleInfo {
@@ -31,6 +32,7 @@ export const ROLE_REGISTRY: RoleInfo[] = [
   { role: 'Bank', label: 'Bank Officer', description: 'Financial private data, mortgage records, lien management', icon: '🏦', color: '#10b981' },
   { role: 'Legal Authority', label: 'Legal Authority', description: 'Court orders, freeze/unfreeze, legal private data', icon: '🔒', color: '#ef4444' },
   { role: 'IGR', label: 'IGR Officer', description: 'Registration oversight, legal & financial data, audit access', icon: '📜', color: '#f97316' },
+  { role: 'Verifier', label: 'Verifier', description: 'Verify land records with identity verification', icon: '🔐', color: '#06b6d4' },
 ];
 
 interface RoleContextType {
