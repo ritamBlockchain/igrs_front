@@ -1,0 +1,16 @@
+[33mc535d94[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32msoumyajit/latest[m[33m, [m[1;31morigin/soumyajit/latest[m[33m)[m HEAD@{0}: pull origin soumyajit/latest: Fast-forward
+[33me2a49e3[m HEAD@{1}: commit: change in verification process
+[33m6b94d1d[m HEAD@{2}: commit: small changes in frontend
+[33m4d08663[m HEAD@{3}: pull origin soumyajit/latest: Fast-forward
+[33mb26ed13[m HEAD@{4}: pull origin soumyajit/latest: Fast-forward
+[33md4538c4[m HEAD@{5}: commit: minor changes in frontend
+[33m2f8944f[m HEAD@{6}: pull origin soumyajit/latest: Fast-forward
+[33me81df64[m HEAD@{7}: commit: change in bulk page
+[33m6de2880[m HEAD@{8}: pull origin soumyajit/latest: Fast-forward
+[33mb2cad0c[m HEAD@{9}: commit: modify the bulk data in csv
+[33m3059cd1[m HEAD@{10}: pull origin soumyajit/latest: Fast-forward
+[33mae04422[m HEAD@{11}: commit: latest code
+[33m99854b5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{12}: checkout: moving from main to soumyajit/latest
+[33m99854b5[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{13}: pull origin main: Fast-forward
+[33mdc5861e[m HEAD@{14}: reset: moving to HEAD
+[33mdc5861e[m HEAD@{15}: clone: from github.com:ritamBlockchain/igrs_front.git

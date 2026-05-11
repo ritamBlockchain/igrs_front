@@ -8,6 +8,7 @@ import { keccak256, toUtf8Bytes } from "ethers";
 import { useRole } from "@/context/RoleContext";
 import { LandLineageTree } from "@/components/LandLineageTree";
 import CONFIG from "@/lib/config";
+import { jsPDF } from "jspdf";
 
 export default function LandDetailPage() {
   const params = useParams();
@@ -21,6 +22,8 @@ export default function LandDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeMutations, setActiveMutations] = useState<any[]>([]);
+  const [showCertificate, setShowCertificate] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Verification state
   const [verifyHash, setVerifyHash] = useState('');
@@ -343,6 +346,114 @@ export default function LandDetailPage() {
     );
   }
 
+  const generatePDF = () => {
+    setDownloading(true);
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // 1. Border
+    doc.setDrawColor(20, 40, 100);
+    doc.setLineWidth(1);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+    doc.setDrawColor(218, 165, 32); // Gold
+    doc.setLineWidth(0.5);
+    doc.rect(7, 7, pageWidth - 14, pageHeight - 14);
+
+    // 2. Header
+    doc.setFontSize(22);
+    doc.setTextColor(20, 40, 100);
+    doc.setFont('helvetica', 'bold');
+    doc.text('CERTIFICATE OF LAND OWNERSHIP', pageWidth / 2, 25, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Government Land Registry Authority - Blockchain Division', pageWidth / 2, 32, { align: 'center' });
+
+    // 3. Horizontal Line
+    doc.setDrawColor(200);
+    doc.line(20, 40, pageWidth - 20, 40);
+
+    // 4. Record Main Info
+    doc.setFontSize(14);
+    doc.setTextColor(50);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`RECORD ID: ${record.record_id}`, 25, 55);
+    doc.text(`OWNER: ${record.owner_name}`, 25, 65);
+
+    // 5. Details Table
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    const startY = 80;
+    const details = [
+      ['Village', record.village_name || 'N/A'],
+      ['Taluka/Block', record.taluka_name || record.block_name || 'N/A'],
+      ['District', record.district_name || 'N/A'],
+      ['Plot/Survey', `${record.plot_number || 'N/A'} / ${record.survey_number || 'N/A'}`],
+      ['Area', `${record.area || record.area_sq_m || 'N/A'} sqm`],
+      ['Land Type', record.land_type || 'N/A'],
+      ['Document Type', record.doc_type || 'Mutation/Deed'],
+      ['Registry Version', `v${record.version || 1}`],
+      ['Issuance Date', new Date().toLocaleDateString()]
+    ];
+
+    details.forEach((row, i) => {
+      doc.setTextColor(120);
+      doc.text(row[0], 25, startY + (i * 8));
+      doc.setTextColor(40);
+      doc.setFont('helvetica', 'bold');
+      doc.text(row[1], 70, startY + (i * 8));
+      doc.setFont('helvetica', 'normal');
+    });
+
+    // 6. Blockchain Verification Section
+    const anchorY = 165;
+    doc.setDrawColor(230, 240, 255);
+    doc.setFillColor(245, 250, 255);
+    doc.rect(20, anchorY, pageWidth - 40, 50, 'F');
+    
+    // QR Code for mobile verification
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(window.location.origin + '/verify/record/' + id)}`;
+    doc.addImage(qrUrl, 'PNG', pageWidth - 55, anchorY + 5, 30, 30);
+
+    doc.setFontSize(10);
+    doc.setTextColor(20, 60, 150);
+    doc.setFont('helvetica', 'bold');
+    doc.text('BLOCKCHAIN VERIFICATION PROOF', 25, anchorY + 10);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('IMMUTABLE DOCUMENT HASH (KECCAK-256):', 25, anchorY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(record.document_hash || 'PENDING_ANCHOR', 25, anchorY + 22);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text('POLYGON TRANSACTION ID:', 25, anchorY + 30);
+    doc.setFont('helvetica', 'bold');
+    doc.text(record.tx_hash || 'N/A', 25, anchorY + 34);
+
+    doc.setFontSize(7);
+    doc.setTextColor(150);
+    doc.text('This document is cryptographically anchored on the Polygon POS network. Any alteration of physical data will invalidate the blockchain proof.', pageWidth / 2, anchorY + 45, { align: 'center' });
+
+    // 7. Footer
+    doc.setFontSize(10);
+    doc.setTextColor(50);
+    doc.text('Authorized Registry Officer', 25, pageHeight - 25);
+    doc.text('System Generated Digital Copy', pageWidth - 25, pageHeight - 25, { align: 'right' });
+
+    // Save
+    doc.save(`LAND_CERTIFICATE_${record.record_id}.pdf`);
+    setDownloading(false);
+  };
+
   const tabs: Array<{ key: 'details' | 'history' | 'lineage' | 'verify' | 'owner'; label: string; icon: React.ElementType }> = [
     { key: 'details', label: 'Record Details', icon: FileText },
     { key: 'history', label: 'History', icon: History },
@@ -453,6 +564,15 @@ export default function LandDetailPage() {
               { label: 'Created', value: record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A', icon: <Clock size={14} /> },
               { label: 'Updated', value: record.updated_at ? new Date(record.updated_at).toLocaleDateString() : 'N/A', icon: <Clock size={14} /> },
               { label: 'Anchored', value: (record.anchor_status === 'anchored' || record.is_anchored || record.tx_hash) ? 'Yes ✓' : 'No' },
+              { label: 'Certificate', value: (record.anchor_status === 'anchored' || record.is_anchored || record.tx_hash) ? (
+                <button 
+                  onClick={() => setShowCertificate(true)}
+                  className="btn btn-primary"
+                  style={{ padding: '6px 14px', fontSize: 12, height: 'auto', width: 'fit-content', background: 'var(--blue-600)' }}
+                >
+                  <FileText size={14} /> View Certificate
+                </button>
+              ) : 'Not Available' },
             ].map(f => (
               <div key={f.label}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{f.label}</div>
@@ -807,6 +927,141 @@ export default function LandDetailPage() {
                 {setOwnerResult.message}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Certificate Modal */}
+      {showCertificate && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="animate-in" style={{ background: 'white', width: '100%', maxWidth: 800, borderRadius: 24, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--slate-50)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ background: 'var(--blue-600)', color: 'white', padding: 8, borderRadius: 8 }}>
+                  <Shield size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0 }}>Certificate of Ownership</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--slate-500)' }}>Immutable Blockchain Record</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCertificate(false)} style={{ padding: 8, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                <X size={24} />
+              </button>
+            </div>
+
+            <div style={{ padding: 40, maxHeight: '70vh', overflowY: 'auto', background: '#f8fafc' }}>
+              {/* Certificate Template Preview */}
+              <div id="certificate-preview" style={{ 
+                background: 'white', 
+                padding: 60, 
+                borderRadius: 4, 
+                boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', 
+                border: '12px double #1e293b', 
+                position: 'relative',
+                minHeight: 800
+              }}>
+                {/* Watermark */}
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)', fontSize: 100, fontWeight: 900, color: 'rgba(0,0,0,0.03)', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+                  JADE SECURED
+                </div>
+
+                <div style={{ textAlign: 'center', marginBottom: 40 }}>
+                  <img src="/seal.png" alt="Registry Seal" style={{ width: 120, height: 120, margin: '0 auto 20px', display: 'block' }} />
+                  <h1 style={{ fontSize: 32, fontWeight: 800, color: '#1e3a8a', letterSpacing: '-0.02em', margin: '0 0 8px' }}>CERTIFICATE OF OWNERSHIP</h1>
+                  <p style={{ color: '#64748b', fontSize: 14, fontWeight: 500 }}>LAND REVENUE DEPARTMENT - BLOCKCHAIN REGISTRY</p>
+                </div>
+
+                <div style={{ margin: '40px 0' }}>
+                  <p style={{ fontSize: 16, color: '#475569', lineHeight: 1.6 }}>
+                    This is to certify that the land record identified as <strong>{record.record_id}</strong> is officially registered on the distributed ledger. 
+                    The current ownership rights are held by:
+                  </p>
+                  <div style={{ margin: '32px 0', padding: '24px 32px', background: '#f1f5f9', borderLeft: '6px solid #1e40af', borderRadius: '0 8px 8px 0' }}>
+                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Owner Recorded</div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a' }}>{record.owner_name}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, margin: '40px 0' }}>
+                  <div>
+                    <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: 8, marginBottom: 16 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, color: '#1e40af' }}>Parcel Details</h4>
+                    </div>
+                    {[
+                      { l: 'Village', v: record.village_name },
+                      { l: 'Taluka', v: record.taluka_name },
+                      { l: 'Plot/Survey', v: `${record.plot_number} / ${record.survey_number}` },
+                      { l: 'Total Area', v: `${record.area || record.area_sq_m} sqm` }
+                    ].map(f => (
+                      <div key={f.l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <span style={{ fontSize: 13, color: '#64748b' }}>{f.l}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{f.v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: 8, marginBottom: 16 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, color: '#1e40af' }}>Legal Status</h4>
+                    </div>
+                    {[
+                      { l: 'Status', v: record.status?.toUpperCase() },
+                      { l: 'Registry Version', v: `v${record.version}` },
+                      { l: 'Created On', v: record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A' },
+                      { l: 'Anchor Status', v: 'Verified (Polygon)' }
+                    ].map(f => (
+                      <div key={f.l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <span style={{ fontSize: 13, color: '#64748b' }}>{f.l}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: f.l === 'Status' ? '#059669' : '#1e293b' }}>{f.v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 60, padding: 24, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, display: 'flex', gap: 20 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <Shield size={16} color="#1e40af" />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase' }}>Blockchain Integrity Proof</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>IMMUTABLE DOCUMENT HASH (KECCAK-256)</div>
+                    <div className="mono" style={{ fontSize: 10, color: '#0f172a', marginBottom: 12, wordBreak: 'break-all' }}>{record.document_hash}</div>
+                    <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4 }}>POLYGON TRANSACTION HASH</div>
+                    <div className="mono" style={{ fontSize: 10, color: '#0f172a', wordBreak: 'break-all' }}>{record.tx_hash}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/verify/record/' + id : '')}`} 
+                      alt="Verification QR" 
+                      style={{ width: 100, height: 100, background: 'white', padding: 8, border: '1px solid #e2e8f0', borderRadius: 8 }}
+                    />
+                    <div style={{ fontSize: 9, color: '#64748b', marginTop: 8, fontWeight: 600 }}>SCAN TO VERIFY</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 80, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: 160, borderBottom: '1px solid #1e293b', marginBottom: 8 }}></div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>Registry Officer</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>Digitally signed on {new Date().toLocaleString()}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>Verify at registry.jade.gov</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px 28px', borderTop: '1px solid var(--slate-100)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button onClick={() => setShowCertificate(false)} className="btn btn-outline">Close Preview</button>
+              <button 
+                onClick={generatePDF} 
+                disabled={downloading}
+                className="btn btn-primary"
+              >
+                {downloading ? <RefreshCw className="spin" size={16} /> : <FileText size={16} />} 
+                {downloading ? 'Generating PDF...' : 'Download Official PDF'}
+              </button>
+            </div>
           </div>
         </div>
       )}

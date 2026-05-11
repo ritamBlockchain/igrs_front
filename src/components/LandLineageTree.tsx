@@ -256,18 +256,12 @@ export function LandLineageTree({
 
             const rawRecords: TreeRecord[] = data.records || []
 
-            // Aggressive deduplication by data content to ensure only 1 tree
-            const dataSet = new Set<string>()
-            const uniqueRecords: TreeRecord[] = []
-            
-            rawRecords.forEach(r => {
-                // Create a unique key based on the actual land data
-                const dataKey = `${r.survey_no}-${r.owner_name}-${r.area}`.toLowerCase().trim()
-                if (!dataSet.has(dataKey)) {
-                    dataSet.add(dataKey)
-                    uniqueRecords.push(r)
-                }
-            })
+            // Use a unique key for each record state (ID + Owner) to prevent deduplication of history
+            const uniqueRecords = rawRecords.map(r => ({
+                ...r,
+                // Generate a unique node ID that includes owner to distinguish history
+                nodeId: `${r.record_id}-${r.owner_name}`.replace(/\s+/g, '_')
+            }));
 
             const newNodes: Node[] = []
             const newEdges: Edge[] = []
@@ -276,54 +270,62 @@ export function LandLineageTree({
             g.setGraph({ rankdir: "TB", nodesep: 220, ranksep: 280 })
             g.setDefaultEdgeLabel(() => ({}))
 
-            uniqueRecords.forEach((rec) => {
+            uniqueRecords.forEach((rec: any) => {
                 newNodes.push({
-                    id: rec.record_id,
+                    id: rec.nodeId,
                     type: 'parcel',
                     data: { record: rec },
                     position: { x: 0, y: 0 },
                 })
 
-                g.setNode(rec.record_id, { width: 260, height: 140 })
+                g.setNode(rec.nodeId, { width: 260, height: 140 })
 
-                // Try to find parent using multiple possible ID formats
+                // 1. Spatial Parent (Splits/Subdivisions)
                 const possibleParentIds = [
                     rec.parent_record_id,
                     rec.parent_land_id,
-                    rec.parent_record_id?.replace(/^REC-/, ''),
-                    rec.parent_land_id?.replace(/^REC-/, ''),
-                    `REC-${rec.parent_record_id}`,
-                    `REC-${rec.parent_land_id}`
                 ].filter(Boolean) as string[]
 
                 for (const pId of possibleParentIds) {
-                    const parent = uniqueRecords.find(r => 
+                    // Find the latest version of the parent record
+                    const parent = uniqueRecords.filter(r => 
                         r.record_id === pId || 
                         r.record_id.replace(/^REC-/, '') === pId.replace(/^REC-/, '')
-                    )
+                    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
-                    if (parent && parent.record_id !== rec.record_id) {
+                    if (parent && parent.nodeId !== rec.nodeId) {
                         newEdges.push({
-                            id: `e-${parent.record_id}-${rec.record_id}`,
-                            source: parent.record_id,
-                            target: rec.record_id,
+                            id: `e-spatial-${parent.nodeId}-${rec.nodeId}`,
+                            source: parent.nodeId,
+                            target: rec.nodeId,
                             animated: false,
                             type: 'bezier',
-                            style: { 
-                                strokeWidth: 2, 
-                                stroke: '#cbd5e1', 
-                                strokeDasharray: '6,4' 
-                            },
-                            markerEnd: { 
-                                type: MarkerType.ArrowClosed, 
-                                width: 20, 
-                                height: 20,
-                                color: '#94a3b8'
-                            }
+                            style: { strokeWidth: 2, stroke: '#cbd5e1', strokeDasharray: '6,4' },
+                            markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20, color: '#94a3b8' }
                         })
-                        g.setEdge(parent.record_id, rec.record_id)
+                        g.setEdge(parent.nodeId, rec.nodeId)
                         break
                     }
+                }
+
+                // 2. Temporal Parent (Ownership History for the SAME record ID)
+                const sameIdRecords = uniqueRecords
+                    .filter((r: any) => r.record_id === rec.record_id)
+                    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                
+                const myIndex = sameIdRecords.findIndex((r: any) => r.nodeId === rec.nodeId);
+                if (myIndex > 0) {
+                    const prevVersion = sameIdRecords[myIndex - 1];
+                    newEdges.push({
+                        id: `e-temporal-${prevVersion.nodeId}-${rec.nodeId}`,
+                        source: prevVersion.nodeId,
+                        target: rec.nodeId,
+                        animated: true, // Animated for history flow
+                        type: 'smoothstep',
+                        style: { strokeWidth: 3, stroke: '#3b82f6' },
+                        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#3b82f6' }
+                    })
+                    g.setEdge(prevVersion.nodeId, rec.nodeId)
                 }
             })
 

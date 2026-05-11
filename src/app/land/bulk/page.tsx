@@ -46,6 +46,7 @@ interface ParsedRecord {
   error?: string;
   ocr_session_id?: string;
   keccak256_hash?: string;
+  is_duplicate?: boolean;
 }
 
 export default function BulkOperationsPage() {
@@ -412,7 +413,8 @@ export default function BulkOperationsPage() {
             village_name: record.village_name,
             taluka_name: record['tehsil/taluka'],
             district_name: record.district_name,
-            ownership_type: record.ownership_type
+            ownership_type: record.ownership_type,
+            record_id: record.record_id
           })
         });
       } else {
@@ -432,19 +434,23 @@ export default function BulkOperationsPage() {
       const newData = [...parsedData];
       if (activeTab === 'pdf') {
         const ok = response.ok || result.ok || result.record_id;
+        const isPrev = result.previously_uploaded || result.idempotent || result.message === 'Data previously uploaded';
         newData[0] = {
           ...newData[0],
           status: ok ? 'success' : 'error',
+          is_duplicate: !!isPrev,
           record_id: result.record?.record_id || result.record_id || newData[0].record_id,
-          error: ok ? undefined : (result.error || 'Ingestion failed')
+          error: ok ? (isPrev ? 'Data previously uploaded' : undefined) : (result.error || 'Ingestion failed')
         };
       } else if (result && result.rows && Array.isArray(result.rows)) {
         result.rows.forEach((rowResult: any) => {
           const idx = rowResult.row_index - 1;
           if (idx >= 0 && idx < newData.length) {
+            const isPrev = rowResult.previously_uploaded || rowResult.skipped || rowResult.reason === 'idempotent_skip' || (rowResult.ok && rowResult.reason === 'Data previously uploaded');
             newData[idx] = {
               ...newData[idx],
-              status: rowResult.ok ? 'success' : 'error',
+              status: rowResult.ok ? (isPrev ? 'success' : 'success') : 'error',
+              is_duplicate: isPrev,
               record_id: rowResult.record_id || newData[idx].record_id,
               error: rowResult.errors?.join(', ') || rowResult.reason
             };
@@ -804,8 +810,8 @@ export default function BulkOperationsPage() {
                     {parsedData.map((row, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.2s' }}>
                         <td style={{ padding: '16px 20px' }}>
-                          <span className={`badge badge-${row.status === 'success' ? 'success' : row.status === 'error' ? 'error' : 'warning'}`} style={{ padding: '4px 12px', borderRadius: 8 }}>
-                            {row.status}
+                          <span className={`badge badge-${row.status === 'success' ? (row.is_duplicate ? 'info' : 'success') : row.status === 'error' ? 'error' : 'warning'}`} style={{ padding: '4px 12px', borderRadius: 8 }}>
+                            {row.is_duplicate ? 'PREVIOUSLY UPLOADED' : row.status}
                           </span>
                         </td>
                         <td style={{ padding: '16px 20px', fontWeight: 600, fontSize: 13 }}>{row.record_id}</td>

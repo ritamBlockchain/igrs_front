@@ -35,6 +35,27 @@ export default function SaleMutationPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
 
+  // Auto-fill seller name when landId is entered
+  useEffect(() => {
+    const fetchCurrentOwner = async () => {
+      if (landId.length >= 4) {
+        try {
+          // Use the existing getRecord API to fetch current state
+          const data = await api.getRecord(landId);
+          if (data && data.record && data.record.owner_name) {
+            setSeller(data.record.owner_name);
+          }
+        } catch (err) {
+          // Silently fail or log for debugging, don't interrupt user typing
+          console.debug("Auto-fetch owner failed for ID:", landId);
+        }
+      }
+    };
+
+    const timer = setTimeout(fetchCurrentOwner, 600); // 600ms debounce
+    return () => clearTimeout(timer);
+  }, [landId]);
+
   // Auto-generate sale deed hash
   useEffect(() => {
     if (landId && seller && buyer) {

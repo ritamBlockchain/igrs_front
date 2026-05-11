@@ -176,10 +176,16 @@ export default function RegisterLandPage() {
 
       {submitted ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', maxWidth: 500, margin: '0 auto' }}>
-          <CheckCircle size={48} color="var(--success)" style={{ marginBottom: 16 }} />
-          <h2>Record Submitted</h2>
-          <p style={{ color: 'var(--text-secondary)', margin: '8px 0 24px' }}>Transaction committed to Fabric ledger successfully.</p>
-          <button className="btn btn-primary" onClick={() => setSubmitted(false)}>Register Another</button>
+          {isDuplicate ? (
+            <AlertCircle size={48} color="var(--warning)" style={{ marginBottom: 16 }} />
+          ) : (
+            <CheckCircle size={48} color="var(--success)" style={{ marginBottom: 16 }} />
+          )}
+          <h2>{isDuplicate ? 'Already Exists' : 'Record Submitted'}</h2>
+          <p style={{ color: 'var(--text-secondary)', margin: '8px 0 24px' }}>
+            {submitResultMessage || (isDuplicate ? 'This record has already been uploaded to the system.' : 'Transaction committed to Fabric ledger successfully.')}
+          </p>
+          <button className="btn btn-primary" onClick={() => { setSubmitted(false); setIsDuplicate(false); setSubmitResultMessage(null); }}>Register Another</button>
         </div>
       ) : (
         <div className="card" style={{ padding: 32, maxWidth: 800 }}>
@@ -453,8 +459,9 @@ export default function RegisterLandPage() {
                 setSubmitting(true);
                 setSubmitError(null);
                 try {
+                  let result;
                   if (ocrSessionId) {
-                    await api.commitOcr({
+                    result = await api.commitOcr({
                       session_id: ocrSessionId,
                       confirm: true,
                       village_id: 0, // Backend will resolve from name
@@ -471,7 +478,7 @@ export default function RegisterLandPage() {
                       role: role || 'Revenue Admin',
                     });
                   } else {
-                    await api.createRecord({
+                    result = await api.createRecord({
                       record_id: formData.recordId,
                       owner_name: formData.ownerId,
                       owner_id: formData.ownerId,
@@ -493,6 +500,12 @@ export default function RegisterLandPage() {
                       index_hash: formData.indexHash,
                     });
                   }
+                  
+                  if (result) {
+                    setIsDuplicate(!!(result as any).previously_uploaded);
+                    setSubmitResultMessage((result as any).message || null);
+                  }
+                  
                   setSubmitted(true);
                   // Refresh records in DataContext so new record appears in list
                   await refreshAll();

@@ -276,6 +276,19 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     try {
       const data = await api.getBatches();
       setBatches(data.batches || []);
+      
+      // Update global stats if batch stats are returned
+      if (data.stats) {
+        setStats(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            total_batches: norm(data.stats.total),
+            anchored_batches: norm(data.stats.anchored),
+            total_records: norm(data.stats.total_records) || prev.total_records,
+          };
+        });
+      }
     } catch (err) {
       setBatchesError(err instanceof Error ? err.message : 'Failed to fetch batches');
     } finally {

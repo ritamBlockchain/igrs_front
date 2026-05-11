@@ -42,9 +42,9 @@ export default function VerifyPage() {
       setFile(dropped);
       setResult(null);
       setError(null);
-      // Try to extract record_id from filename
-      const match = dropped.name.match(/REC-\d{4}-\d+/i);
-      if (match && !recordId) setRecordId(match[0]);
+      // Try to extract record_id from filename (matches REC-xxxx or MP-BHO-xxxx formats)
+      const match = dropped.name.match(/(REC|MP|IND|BHO|S|K)-\d+/i) || dropped.name.match(/[A-Z]+-[A-Z]+-\d+/i);
+      if (match && !recordId) setRecordId(match[0].toUpperCase());
     }
   };
 
@@ -54,8 +54,8 @@ export default function VerifyPage() {
       setFile(f);
       setResult(null);
       setError(null);
-      const match = f.name.match(/REC-\d{4}-\d+/i);
-      if (match && !recordId) setRecordId(match[0]);
+      const match = f.name.match(/(REC|MP|IND|BHO|S|K)-\d+/i) || f.name.match(/[A-Z]+-[A-Z]+-\d+/i);
+      if (match && !recordId) setRecordId(match[0].toUpperCase());
     }
   };
 
@@ -90,6 +90,12 @@ export default function VerifyPage() {
 
       const data: VerificationResult = await res.json();
       console.log('[Verification] Response:', data);
+      
+      // Auto-correct recordId if OCR found a better match and user's was empty or mismatched
+      if (data.extracted_metadata?.record_id && data.extracted_metadata.record_id !== recordId) {
+        setRecordId(data.extracted_metadata.record_id);
+      }
+      
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed');
@@ -239,12 +245,16 @@ export default function VerifyPage() {
               ? <CheckCircle size={28} color="#22c55e" />
               : <XCircle size={28} color="#ef4444" />}
             <div>
-              <div style={{ fontWeight: 700, fontSize: '1.1rem', color: result.success ? '#22c55e' : '#ef4444' }}>
-                {result.success ? '✓ Verified on Polygon' : '✗ Verification Failed'}
+              <div style={{ fontWeight: 700, fontSize: '1.1rem', color: result.success ? (result.status === 'VERIFIED_ON_POLYGON' ? '#22c55e' : '#3b82f6') : '#ef4444' }}>
+                {result.success 
+                  ? (result.status === 'VERIFIED_ON_POLYGON' ? '✓ Verified on Polygon' : '✓ Verified on Fabric Ledger') 
+                  : '✗ Verification Failed'}
               </div>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 2 }}>
                 {result.success
-                  ? 'Document data matches the on-chain anchor. This record is authentic.'
+                  ? (result.status === 'VERIFIED_ON_POLYGON' 
+                      ? 'Document data matches the on-chain anchor. This record is authentic.' 
+                      : 'Verified on Fabric ledger. On-chain Polygon anchoring is pending for the next batch.')
                   : 'The uploaded document does not match the blockchain record.'}
               </div>
             </div>

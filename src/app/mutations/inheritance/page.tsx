@@ -1,7 +1,7 @@
 'use client';
 
 import { useRole } from "@/context/RoleContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle, AlertTriangle, ArrowRight, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { LandLineageTree } from "@/components/LandLineageTree";
@@ -30,6 +30,24 @@ export default function InheritanceMutationPage() {
   const [landId, setLandId] = useState('');
   const [previousOwner, setPreviousOwner] = useState('');
   const [heirs, setHeirs] = useState([{ name: '', share: '' }]);
+
+  // Auto-fill previous owner name when landId is entered
+  useEffect(() => {
+    const fetchCurrentOwner = async () => {
+      if (landId.length >= 4) {
+        try {
+          const data = await api.getRecord(landId);
+          if (data && data.record && data.record.owner_name) {
+            setPreviousOwner(data.record.owner_name);
+          }
+        } catch (err) {
+          console.debug("Auto-fetch owner failed for ID:", landId);
+        }
+      }
+    };
+    const timer = setTimeout(fetchCurrentOwner, 600);
+    return () => clearTimeout(timer);
+  }, [landId]);
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
