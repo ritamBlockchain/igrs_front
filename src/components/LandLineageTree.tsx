@@ -340,13 +340,11 @@ export function LandLineageTree({
                 }
             });
 
-            // 4. Sort the unique states chronologically
-            const sortedUniqueRecords = Array.from(stateMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-
-            const uniqueRecords = sortedUniqueRecords.map(r => ({
+            // 4. Normalize records for DAG processing
+            const uniqueRecords = Array.from(stateMap.values()).map(r => ({
                 ...r,
                 is_active: r.timestamp === latestTime,
-                nodeId: `node-${r.survey_no}-${r.owner_name}-${r.timestamp}`.replace(/[:|\s|.]+/g, '_')
+                nodeId: `node-${r.survey_no || r.khasra_no}-${r.owner_name}-${r.timestamp}`.replace(/[:|\s|.]+/g, '_')
             }));
 
             const newNodes: Node[] = []
@@ -356,29 +354,49 @@ export function LandLineageTree({
             g.setGraph({ rankdir: "TB", nodesep: 150, ranksep: 200 })
             g.setDefaultEdgeLabel(() => ({}))
 
-            // Sort unique records chronologically
-            const sortedRecords = [...uniqueRecords];
+            // 1. Build Nodes (Linear steps from History)
+            // Sort ALL unique records globally by timestamp to match history logs
+            const chronologicalRecords = [...uniqueRecords].sort((a, b) => a.timestamp - b.timestamp);
 
-            sortedRecords.forEach((rec: any, idx: number) => {
-                // Each unique record (mutation version) becomes ONE node
+            chronologicalRecords.forEach((rec: any) => {
                 newNodes.push({
                     id: rec.nodeId,
                     type: 'parcel',
                     data: { record: rec },
                     position: { x: 0, y: 0 },
                 });
-
-                // Taller height to accommodate potential list of owners
                 g.setNode(rec.nodeId, { width: 320, height: 220 });
+            });
 
-                // Connect to the previous version in the chain
-                if (idx > 0) {
-                    const prevRec = sortedRecords[idx - 1];
+            // 2. Build Edges (Strictly following the Parent-Child or Chronological Flow)
+            chronologicalRecords.forEach((rec, idx) => {
+                const parentId = rec.parent_record_id || rec.parent_land_id;
+                
+                let parentNodeId = "";
+
+                if (parentId) {
+                    // Try to find the LATEST version of the explicit parent
+                    const parents = chronologicalRecords.filter(r => 
+                        r.record_id === parentId || 
+                        r.record_id.replace(/^REC-/, '') === parentId.replace(/^REC-/, '') ||
+                        r.survey_no === parentId
+                    ).filter(r => r.timestamp < rec.timestamp)
+                     .sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    if (parents.length > 0) parentNodeId = parents[0].nodeId;
+                }
+
+                // If no explicit parent found, connect to the IMMEDIATELY PREVIOUS record 
+                // in the chronological list (if it's the same parcel or a related mutation)
+                if (!parentNodeId && idx > 0) {
+                    parentNodeId = chronologicalRecords[idx - 1].nodeId;
+                }
+
+                if (parentNodeId && parentNodeId !== rec.nodeId) {
                     const mutationType = (rec.doc_type || 'MUTATION').toUpperCase();
-
                     newEdges.push({
-                        id: `e-flow-${prevRec.nodeId}-${rec.nodeId}`,
-                        source: prevRec.nodeId,
+                        id: `e-lineage-${parentNodeId}-${rec.nodeId}`,
+                        source: parentNodeId,
                         target: rec.nodeId,
                         animated: true,
                         label: mutationType,
@@ -386,31 +404,7 @@ export function LandLineageTree({
                         labelStyle: { fontSize: '10px', fill: '#3b82f6', fontWeight: 900, background: '#fff' },
                         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#3b82f6' }
                     });
-                    g.setEdge(prevRec.nodeId, rec.nodeId);
-                }
-
-                // Handle spatial parents (Splits from different Land IDs)
-                if (idx === 0 && (rec.parent_record_id || rec.parent_land_id)) {
-                    const pId = rec.parent_record_id || rec.parent_land_id;
-                    const parentVersions = rawRecords.filter(r => 
-                        r.record_id === pId || 
-                        r.record_id.replace(/^REC-/, '') === pId.replace(/^REC-/, '')
-                    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                    
-                    if (parentVersions.length > 0) {
-                        const latestParent = parentVersions[0];
-                        const lpNodeId = `${latestParent.record_id}-${latestParent.owner_name}-${new Date(latestParent.created_at).getTime()}`.replace(/[:|\s]+/g, '_');
-                        
-                        newEdges.push({
-                            id: `e-split-${lpNodeId}-${rec.nodeId}`,
-                            source: lpNodeId,
-                            target: rec.nodeId,
-                            animated: false,
-                            label: 'SUBDIVISION',
-                            style: { stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '4,4' },
-                            labelStyle: { fontSize: '9px', fill: '#64748b' }
-                        });
-                    }
+                    g.setEdge(parentNodeId, rec.nodeId);
                 }
             });
 
