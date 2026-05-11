@@ -304,9 +304,12 @@ export default function LandDetailPage() {
           setChainOfTitle(recordData.chainOfTitle || []);
         }
         
-        // Filter mutations for this record
+        // Filter mutations for this record - only show truly ACTIVE ones
         const recordMutations = (mutationsData.mutations || []).filter(
-          (m: any) => m.status !== 'finalized' && m.status !== 'FINALIZED'
+          (m: any) => {
+            const s = (m.status || '').toLowerCase();
+            return s !== 'finalized' && s !== 'completed' && s !== 'rejected' && s !== 'approved';
+          }
         );
         setActiveMutations(recordMutations);
       } catch (err) {
@@ -528,7 +531,13 @@ export default function LandDetailPage() {
                     </div>
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>Status</div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--warning)' }}>{m.status}</div>
+                      <div style={{ 
+                        fontSize: 14, 
+                        fontWeight: 600, 
+                        color: ['completed', 'finalized', 'verified'].includes(m.status?.toLowerCase()) ? 'var(--success)' : 'var(--warning)' 
+                      }}>
+                        {m.status}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: 4 }}>From (Current Owner)</div>

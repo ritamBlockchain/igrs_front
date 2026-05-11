@@ -2,7 +2,7 @@
 
 import { useRole } from "@/context/RoleContext";
 import { useState, useEffect } from "react";
-import { CheckCircle, AlertTriangle, ArrowRight, RefreshCw, Gift } from "lucide-react";
+import { CheckCircle, AlertTriangle, ArrowRight, RefreshCw, Trash2, Gift } from "lucide-react";
 import { api } from "@/lib/api";
 import { LandLineageTree } from "@/components/LandLineageTree";
 import CONFIG from "@/lib/config";
@@ -29,8 +29,51 @@ export default function GiftMutationPage() {
   // Form states
   const [landId, setLandId] = useState('');
   const [donor, setDonor] = useState('');
-  const [recipient, setRecipient] = useState('');
   const [giftDeedHash, setGiftDeedHash] = useState('');
+  const [totalArea, setTotalArea] = useState(0);
+
+  // Shares division
+  const [heirs, setHeirs] = useState<{name: string, share: string, area: string}[]>([]);
+  const totalShares = heirs.reduce((sum, h) => sum + (parseFloat(h.share) || 0), 0);
+  const isSharesValid = totalShares > 0 && totalShares <= 100;
+
+  const addHeir = () => setHeirs([...heirs, { name: '', share: '', area: '' }]);
+  const removeHeir = (i: number) => setHeirs(heirs.filter((_, idx) => idx !== i));
+  
+  const updateHeir = (i: number, field: 'name' | 'share' | 'area', value: string) => {
+    const updated = [...heirs];
+    updated[i][field] = value;
+
+    if (field === 'area' && totalArea > 0) {
+      const areaVal = parseFloat(value);
+      if (!isNaN(areaVal)) {
+        updated[i].share = ((areaVal / totalArea) * 100).toFixed(2);
+      } else {
+        updated[i].share = '';
+      }
+    } else if (field === 'share' && totalArea > 0) {
+      const shareVal = parseFloat(value);
+      if (!isNaN(shareVal)) {
+        updated[i].area = ((shareVal / 100) * totalArea).toFixed(2);
+      } else {
+        updated[i].area = '';
+      }
+    }
+    setHeirs(updated);
+  };
+
+  // Sync areas if totalArea changes
+  useEffect(() => {
+    if (totalArea > 0) {
+      setHeirs(prev => prev.map(h => {
+        const shareVal = parseFloat(h.share);
+        if (!isNaN(shareVal)) {
+          return { ...h, area: ((shareVal / 100) * totalArea).toFixed(2) };
+        }
+        return h;
+      }));
+    }
+  }, [totalArea]);
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
@@ -41,8 +84,10 @@ export default function GiftMutationPage() {
       if (landId.length >= 4) {
         try {
           const data = await api.getRecord(landId);
-          if (data && data.record && data.record.owner_name) {
-            setDonor(data.record.owner_name);
+          if (data && data.record) {
+            if (data.record.owner_name) setDonor(data.record.owner_name);
+            if (data.record.area) setTotalArea(Number(data.record.area));
+            else if (data.record.area_sq_m) setTotalArea(Number(data.record.area_sq_m));
           }
         } catch (err) {
           console.debug("Auto-fetch owner failed for ID:", landId);
@@ -53,34 +98,47 @@ export default function GiftMutationPage() {
     return () => clearTimeout(timer);
   }, [landId]);
 
+  // Determine effective recipient string
+  const validHeirs = heirs.filter(h => h.name.trim() && h.share.trim());
+  const effectiveRecipient = validHeirs.map(h => `${h.name}:${h.share}`).join('|');
+
   // Auto-generate gift deed hash
   useEffect(() => {
-    if (landId && donor && recipient) {
+    if (landId && donor && validHeirs.length > 0) {
       const computeHash = async (text: string) => {
         const msgUint8 = new TextEncoder().encode(text);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        setGiftDeedHash(hashHex);
       };
-      const payload = `GIFT_DEED|${landId}|${donor}|${recipient}|${new Date().toISOString().split('T')[0]}`;
-      computeHash(payload).then(setGiftDeedHash);
+      const payload = `GIFT_DEED|${landId}|${donor}|${effectiveRecipient}|${new Date().toISOString().split('T')[0]}`;
+      computeHash(payload);
     } else {
       setGiftDeedHash('');
     }
-  }, [landId, donor, recipient]);
+  }, [landId, donor, effectiveRecipient]);
 
   const handleCreateMutation = async () => {
-    if (!landId || !donor || !recipient || !giftDeedHash) {
-      setResult({ success: false, message: 'All required fields must be filled' });
+    const validHeirs = heirs.filter(h => h.name.trim() && h.share.trim());
+    const effectiveRecipient = validHeirs.map(h => `${h.name}:${h.share}`).join('|');
+
+    if (!landId || !donor || validHeirs.length === 0 || !giftDeedHash) {
+      setResult({ success: false, message: 'All required fields must be filled (including at least one recipient)' });
       return;
     }
+    if (totalShares > 100) {
+      setResult({ success: false, message: 'Total shares cannot exceed 100%' });
+      return;
+    }
+
     setSubmitting(true);
     setResult(null);
     try {
       await api.createMutation({
         record_id: landId,
         current_owner: donor,
-        new_owner: recipient,
+        new_owner: effectiveRecipient,
         mutation_type: 'Gift',
         supporting_doc: giftDeedHash,
         initiated_by: role || 'Registrar',
@@ -113,7 +171,7 @@ export default function GiftMutationPage() {
         setTimeout(() => { setCurrentStep(nextStep); setResult(null); }, 2000);
       } else if (action === 'finalize') {
         setTimeout(() => {
-          setLandId(''); setDonor(''); setRecipient('');
+          setLandId(''); setDonor(''); setRecipient(''); setHeirs([]);
           setCurrentStep(1); setResult(null);
         }, 3000);
       }
@@ -156,17 +214,101 @@ export default function GiftMutationPage() {
 
       {/* Step Content */}
       {currentStep === 1 && (
-        <StepCard step={STEPS[0]} role={role} onSubmit={handleCreateMutation} loading={submitting} result={result}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div><label className="label">Land ID *</label><input className="input" placeholder="e.g. REC-2026-14" value={landId} onChange={e => setLandId(e.target.value)} /></div>
+        <StepCard 
+          step={STEPS[0]} 
+          role={role} 
+          onSubmit={handleCreateMutation} 
+          loading={submitting} 
+          result={result}
+          disabled={heirs.length > 0 && totalShares > 100}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 20 }}>
+              <div>
+                <label className="label">Land ID *</label>
+                <input className="input" placeholder="e.g. REC-2026-14" value={landId} onChange={e => setLandId(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Total Land Area (sq. m)</label>
+                <input className="input" value={totalArea ? `${totalArea} sqm` : (landId ? 'Verifying Record...' : 'Total Area')} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)', fontWeight: 700 }} />
+              </div>
+            </div>
+
             <div>
               <label className="label">Gift Deed Hash *</label>
-              <input className="input mono" placeholder="SHA-256 hash (auto-generated)" value={giftDeedHash} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              <input className="input mono" placeholder="SHA-256 hash" value={giftDeedHash} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
             </div>
-            <div><label className="label">Donor (Current Owner) *</label><input className="input" placeholder="Full name" value={donor} onChange={e => setDonor(e.target.value)} /></div>
-            <div><label className="label">Recipient *</label><input className="input" placeholder="Full name" value={recipient} onChange={e => setRecipient(e.target.value)} /></div>
-            <div><label className="label">Registrar ID</label><input className="input" value={role || 'Auto-filled from session'} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} /></div>
-            <div><label className="label">Mutation Type</label><input className="input" value="GIFT" readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} /></div>
+
+            <div>
+              <label className="label">Donor (Current Owner) *</label>
+              <input className="input" placeholder="Full name" value={donor} onChange={e => setDonor(e.target.value)} />
+            </div>
+
+            {/* Shares Division Section */}
+            <div style={{ padding: '24px', background: 'var(--slate-50)', borderRadius: 16, border: '1px dashed var(--slate-300)', marginTop: 8 }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h4 style={{ margin: 0 }}>Recipient Shares</h4>
+                  <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={addHeir}>+ Add Heir</button>
+               </div>
+
+               {heirs.length > 0 ? (
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {heirs.map((h, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 40px', gap: 12, alignItems: 'end' }}>
+                        <div>
+                          <label className="label" style={{ fontSize: 10 }}>Shareholder Name</label>
+                          <input className="input" placeholder="Full name" value={h.name} onChange={e => updateHeir(i, 'name', e.target.value)} />
+                        </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Area (sqm) *</label>
+                        <input className="input" type="number" step="0.01" placeholder="e.g. 500" value={h.area} onChange={e => updateHeir(i, 'area', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Share (%)</label>
+                        <input className="input" type="number" step="0.01" placeholder="Calculated" value={h.share} onChange={e => updateHeir(i, 'share', e.target.value)} />
+                      </div>
+                        <button onClick={() => removeHeir(i)} style={{ padding: 10, background: 'none', border: 'none', color: 'var(--red-500)', cursor: 'pointer' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--slate-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL SHARES</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: totalShares <= 100 ? 'var(--success)' : 'var(--error)' }}>{totalShares.toFixed(1)}%</div>
+                       </div>
+                       {totalArea > 0 && (
+                         <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL AREA</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--slate-700)' }}>{((totalShares / 100) * totalArea).toFixed(2)} / {totalArea} sqm</div>
+                         </div>
+                       )}
+                    </div>
+                    {totalShares > 100 && (
+                      <div style={{ fontSize: 11, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <AlertTriangle size={12} /> Total cannot exceed 100%
+                      </div>
+                    )}
+                 </div>
+               ) : (
+                 <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--slate-400)' }}>
+                    <Gift size={32} style={{ opacity: 0.2, marginBottom: 12 }} />
+                    <p style={{ fontSize: 13 }}>Click "+ Add Heir" to divide gift shares among multiple recipients.</p>
+                 </div>
+               )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div>
+                <label className="label">Registrar ID</label>
+                <input className="input" value={role || 'Admin'} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              </div>
+              <div>
+                <label className="label">Mutation Type</label>
+                <input className="input" value="GIFT" readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              </div>
+            </div>
           </div>
         </StepCard>
       )}
@@ -175,7 +317,8 @@ export default function GiftMutationPage() {
         <StepCard step={STEPS[1]} role={role} onSubmit={() => handleWorkflowStep('verify', 3)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--blue-50)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 4 }}>Pending Verification</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Land ID: {landId || 'Unknown'} · Donor: {donor || 'Current Owner'} → Recipient: {recipient || 'New Owner'}</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Land ID: {landId || 'Unknown'} · Donor: {donor || 'Current Owner'}</div>
+            <div style={{ fontSize: 12, color: 'var(--blue-600)', marginTop: 4, fontWeight: 500 }}>Recipient(s): {effectiveRecipient}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to verify" value={landId} onChange={e => setLandId(e.target.value)} /></div>
           <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>Talati confirms field inspection, donor identity, and gift deed document validity.</p>
@@ -196,10 +339,11 @@ export default function GiftMutationPage() {
         <StepCard step={STEPS[3]} role={role} onSubmit={() => handleWorkflowStep('finalize')} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--success-bg)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>Ready to Finalize</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Ownership will be transferred to recipient</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Ownership will be transferred to recipient(s)</div>
+            <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>New Owner: {effectiveRecipient}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to finalize" value={landId} onChange={e => setLandId(e.target.value)} /></div>
-          <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>This will transfer ownership from donor to recipient, update the owner on the ledger record, increment version, and recompute record hash.</p>
+          <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>This will transfer ownership from donor to recipient(s), update the owner on the ledger record, increment version, and recompute record hash.</p>
         </StepCard>
       )}
 

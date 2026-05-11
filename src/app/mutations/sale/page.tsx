@@ -2,7 +2,7 @@
 
 import { useRole } from "@/context/RoleContext";
 import { useState, useEffect } from "react";
-import { CheckCircle, AlertTriangle, ArrowRight } from "lucide-react";
+import { CheckCircle, AlertTriangle, ArrowRight, RefreshCw, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { LandLineageTree } from "@/components/LandLineageTree";
 import CONFIG from "@/lib/config";
@@ -29,8 +29,50 @@ export default function SaleMutationPage() {
   // Form states
   const [landId, setLandId] = useState('');
   const [seller, setSeller] = useState('');
-  const [buyer, setBuyer] = useState('');
   const [saleDeedHash, setSaleDeedHash] = useState('');
+  const [totalArea, setTotalArea] = useState(0);
+
+  // Shares division
+  const [buyers, setBuyers] = useState<{name: string, share: string, area: string}[]>([]);
+  const totalShares = buyers.reduce((sum, b) => sum + (parseFloat(b.share) || 0), 0);
+  const isSharesValid = totalShares > 0 && totalShares <= 100;
+
+  const addBuyer = () => setBuyers([...buyers, { name: '', share: '', area: '' }]);
+  const removeBuyer = (i: number) => setBuyers(buyers.filter((_, idx) => idx !== i));
+  const updateBuyer = (i: number, field: 'name' | 'share' | 'area', value: string) => {
+    const updated = [...buyers];
+    updated[i][field] = value;
+
+    if (field === 'area' && totalArea > 0) {
+      const areaVal = parseFloat(value);
+      if (!isNaN(areaVal)) {
+        updated[i].share = ((areaVal / totalArea) * 100).toFixed(2);
+      } else {
+        updated[i].share = '';
+      }
+    } else if (field === 'share' && totalArea > 0) {
+      const shareVal = parseFloat(value);
+      if (!isNaN(shareVal)) {
+        updated[i].area = ((shareVal / 100) * totalArea).toFixed(2);
+      } else {
+        updated[i].area = '';
+      }
+    }
+    setBuyers(updated);
+  };
+
+  // Sync areas if totalArea changes
+  useEffect(() => {
+    if (totalArea > 0) {
+      setBuyers(prev => prev.map(b => {
+        const shareVal = parseFloat(b.share);
+        if (!isNaN(shareVal)) {
+          return { ...b, area: ((shareVal / 100) * totalArea).toFixed(2) };
+        }
+        return b;
+      }));
+    }
+  }, [totalArea]);
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
@@ -40,13 +82,13 @@ export default function SaleMutationPage() {
     const fetchCurrentOwner = async () => {
       if (landId.length >= 4) {
         try {
-          // Use the existing getRecord API to fetch current state
           const data = await api.getRecord(landId);
-          if (data && data.record && data.record.owner_name) {
-            setSeller(data.record.owner_name);
+          if (data && data.record) {
+            if (data.record.owner_name) setSeller(data.record.owner_name);
+            if (data.record.area) setTotalArea(Number(data.record.area));
+            else if (data.record.area_sq_m) setTotalArea(Number(data.record.area_sq_m));
           }
         } catch (err) {
-          // Silently fail or log for debugging, don't interrupt user typing
           console.debug("Auto-fetch owner failed for ID:", landId);
         }
       }
@@ -56,26 +98,35 @@ export default function SaleMutationPage() {
     return () => clearTimeout(timer);
   }, [landId]);
 
+  // Determine effective buyer string
+  const validBuyers = buyers.filter(b => b.name.trim() && b.share.trim());
+  const effectiveBuyer = validBuyers.map(b => `${b.name}:${b.share}`).join('|');
+
   // Auto-generate sale deed hash
   useEffect(() => {
-    if (landId && seller && buyer) {
+    if (landId && seller && validBuyers.length > 0) {
       const computeHash = async (text: string) => {
         const msgUint8 = new TextEncoder().encode(text);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        setSaleDeedHash(hashHex);
       };
       
-      const payload = `SALE_DEED|${landId}|${seller}|${buyer}|${new Date().toISOString().split('T')[0]}`;
-      computeHash(payload).then(setSaleDeedHash);
+      const payload = `SALE_DEED|${landId}|${seller}|${effectiveBuyer}|${new Date().toISOString().split('T')[0]}`;
+      computeHash(payload);
     } else {
       setSaleDeedHash('');
     }
-  }, [landId, seller, buyer]);
+  }, [landId, seller, effectiveBuyer]);
 
   const handleCreateMutation = async () => {
-    if (!landId || !seller || !buyer || !saleDeedHash) {
-      setResult({ success: false, message: 'All required fields must be filled' });
+    if (!landId || !seller || validBuyers.length === 0 || !saleDeedHash) {
+      setResult({ success: false, message: 'All required fields must be filled (including at least one buyer)' });
+      return;
+    }
+    if (totalShares > 100) {
+      setResult({ success: false, message: 'Total shares cannot exceed 100%' });
       return;
     }
     
@@ -85,7 +136,7 @@ export default function SaleMutationPage() {
       const res = await api.createMutation({
         record_id: landId,
         current_owner: seller,
-        new_owner: buyer,
+        new_owner: effectiveBuyer,
         mutation_type: 'SALE',
         supporting_doc: saleDeedHash,
         initiated_by: role || 'Registrar',
@@ -128,6 +179,7 @@ export default function SaleMutationPage() {
           setLandId('');
           setSeller('');
           setBuyer('');
+          setBuyers([]);
           setCurrentStep(1);
           setResult(null);
         }, 3000);
@@ -171,17 +223,100 @@ export default function SaleMutationPage() {
 
       {/* Step Content */}
       {currentStep === 1 && (
-        <StepCard step={STEPS[0]} role={role} onSubmit={handleCreateMutation} loading={submitting} result={result}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div><label className="label">Land ID *</label><input className="input" placeholder="e.g. REC-2026-15" value={landId} onChange={e => setLandId(e.target.value)} /></div>
+        <StepCard 
+          step={STEPS[0]} 
+          role={role} 
+          onSubmit={handleCreateMutation} 
+          loading={submitting} 
+          result={result}
+          disabled={buyers.length > 0 && totalShares > 100}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 20 }}>
+              <div>
+                <label className="label">Land ID *</label>
+                <input className="input" placeholder="e.g. REC-2026-15" value={landId} onChange={e => setLandId(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Total Land Area (sq. m)</label>
+                <input className="input" value={totalArea ? `${totalArea} sqm` : (landId ? 'Verifying Record...' : 'Total Area')} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)', fontWeight: 700 }} />
+              </div>
+            </div>
+            
             <div>
               <label className="label">Sale Deed Hash *</label>
               <input className="input mono" placeholder="SHA-256 hash" value={saleDeedHash} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
             </div>
-            <div><label className="label">Seller (Current Owner) *</label><input className="input" placeholder="Full name" value={seller} onChange={e => setSeller(e.target.value)} /></div>
-            <div><label className="label">Buyer (New Owner) *</label><input className="input" placeholder="Full name" value={buyer} onChange={e => setBuyer(e.target.value)} /></div>
-            <div><label className="label">Registrar ID</label><input className="input" value={role || 'Auto-filled from session'} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} /></div>
-            <div><label className="label">Mutation Type</label><input className="input" value="SALE" readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} /></div>
+
+            <div>
+              <label className="label">Seller (Current Owner) *</label>
+              <input className="input" placeholder="Full name" value={seller} onChange={e => setSeller(e.target.value)} />
+            </div>
+
+            {/* Shares Division Section */}
+            <div style={{ padding: '24px', background: 'var(--slate-50)', borderRadius: 16, border: '1px dashed var(--slate-300)', marginTop: 8 }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h4 style={{ margin: 0 }}>Buyer Shares</h4>
+                  <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={addBuyer}>+ Add Buyer</button>
+               </div>
+
+               {buyers.length > 0 ? (
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {buyers.map((b, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 40px', gap: 12, alignItems: 'end' }}>
+                        <div>
+                          <label className="label" style={{ fontSize: 10 }}>Buyer Name</label>
+                          <input className="input" placeholder="Full name" value={b.name} onChange={e => updateBuyer(i, 'name', e.target.value)} />
+                        </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Area (sqm) *</label>
+                        <input className="input" type="number" step="0.01" placeholder="e.g. 500" value={b.area} onChange={e => updateBuyer(i, 'area', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Share (%)</label>
+                        <input className="input" type="number" step="0.01" placeholder="Calculated" value={b.share} onChange={e => updateBuyer(i, 'share', e.target.value)} />
+                      </div>
+                        <button onClick={() => removeBuyer(i)} style={{ padding: 10, background: 'none', border: 'none', color: 'var(--red-500)', cursor: 'pointer' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--slate-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL SHARES</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: totalShares <= 100 ? 'var(--success)' : 'var(--error)' }}>{totalShares.toFixed(1)}%</div>
+                       </div>
+                       {totalArea > 0 && (
+                         <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL AREA</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--slate-700)' }}>{((totalShares / 100) * totalArea).toFixed(2)} / {totalArea} sqm</div>
+                         </div>
+                       )}
+                    </div>
+                    {totalShares > 100 && (
+                      <div style={{ fontSize: 11, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <AlertTriangle size={12} /> Total cannot exceed 100%
+                      </div>
+                    )}
+                 </div>
+               ) : (
+                 <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--slate-400)' }}>
+                    <p style={{ fontSize: 13 }}>Click "+ Add Buyer" to record shared ownership between multiple buyers.</p>
+                 </div>
+               )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div>
+                <label className="label">Registrar ID</label>
+                <input className="input" value={role || 'Admin'} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              </div>
+              <div>
+                <label className="label">Mutation Type</label>
+                <input className="input" value="SALE" readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              </div>
+            </div>
           </div>
         </StepCard>
       )}
@@ -190,7 +325,8 @@ export default function SaleMutationPage() {
         <StepCard step={STEPS[1]} role={role} onSubmit={() => handleWorkflowStep('verify', 3)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--blue-50)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 4 }}>Pending Verification</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Land ID: {landId || 'Unknown'} · Seller: {seller || 'Current Owner'} → Buyer: {buyer || 'New Owner'}</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Land ID: {landId || 'Unknown'} · Seller: {seller || 'Current Owner'}</div>
+            <div style={{ fontSize: 12, color: 'var(--blue-600)', marginTop: 4, fontWeight: 500 }}>Buyer(s): {effectiveBuyer}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to verify" value={landId} onChange={e => setLandId(e.target.value)} /></div>
           <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>Talati confirms field inspection and document validity.</p>
@@ -211,7 +347,8 @@ export default function SaleMutationPage() {
         <StepCard step={STEPS[3]} role={role} onSubmit={() => handleWorkflowStep('finalize')} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--success-bg)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>Ready to Finalize</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Ownership will be transferred to buyer</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Ownership will be transferred to buyer(s)</div>
+            <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>New Owner: {effectiveBuyer}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to finalize" value={landId} onChange={e => setLandId(e.target.value)} /></div>
           <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>This will close previous ownership, create new ownership entry, update owner on record, increment version, and recompute record hash.</p>
@@ -247,7 +384,8 @@ function StepCard({
   children,
   onSubmit,
   loading,
-  result
+  result,
+  disabled
 }: { 
   step: Step; 
   role: string | null; 
@@ -255,6 +393,7 @@ function StepCard({
   onSubmit?: () => void;
   loading?: boolean;
   result?: {success: boolean, message: string} | null;
+  disabled?: boolean;
 }) {
   const canAct = role ? step.allowedRoles.includes(role) : false;
   return (
@@ -289,9 +428,9 @@ function StepCard({
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
         <button 
           className="btn btn-primary" 
-          style={{ opacity: canAct && !loading ? 1 : 0.4, pointerEvents: canAct && !loading ? 'auto' : 'none' }}
+          style={{ opacity: (canAct && !loading && !disabled) ? 1 : 0.4, pointerEvents: (canAct && !loading && !disabled) ? 'auto' : 'none' }}
           onClick={onSubmit}
-          disabled={!canAct || loading}
+          disabled={!canAct || loading || disabled}
         >
           {loading ? 'Submitting...' : 'Submit Transaction'} {!loading && <ArrowRight size={16} />}
         </button>

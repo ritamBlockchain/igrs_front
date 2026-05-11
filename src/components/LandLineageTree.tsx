@@ -18,6 +18,18 @@ import "@xyflow/react/dist/style.css"
 import dagre from "dagre"
 import { ExternalLink, AlertCircle, Info, History as HistoryIcon } from "lucide-react"
 
+const TooltipStyles = () => (
+    <style jsx global>{`
+        @keyframes tooltipIn {
+            from { opacity: 0; transform: translate(-50%, 20px) scale(0.95); }
+            to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        }
+        .lineage-node-premium.hovered {
+            z-index: 1000 !important;
+        }
+    `}</style>
+);
+
 interface TreeRecord {
     record_id: string
     parent_land_id: string | null
@@ -83,9 +95,9 @@ const LandParcelNode = memo(({ data }: { data: any }) => {
                 alignItems: 'center',
                 textAlign: 'center',
                 cursor: 'pointer',
-                zIndex: isHovered ? 100 : 1
+                zIndex: isHovered ? 1000 : 1
             }} 
-            className="lineage-node-premium"
+            className={`lineage-node-premium ${isHovered ? 'hovered' : ''}`}
         >
             
             {/* External Link Icon - Positioned exactly as in the image */}
@@ -123,15 +135,48 @@ const LandParcelNode = memo(({ data }: { data: any }) => {
                 </h3>
                 
                 {/* Owner Name - Slightly smaller and muted */}
-                <p style={{ 
-                    fontSize: '0.95rem', 
-                    fontWeight: 600, 
-                    color: theme.ownerText,
-                    margin: 0,
-                    opacity: 0.9
-                }}>
-                    {rec.owner_name}
-                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', width: '100%', padding: '0 20px' }}>
+                    {rec.owner_name.includes(':') || rec.owner_name.includes('|') ? (
+                        rec.owner_name.split('|').map((part: string, idx: number) => {
+                            const [name, shareStr] = part.split(':');
+                            const share = parseFloat(shareStr) || 0;
+                            const totalArea = parseFloat(rec.area || '0');
+                            const ownerArea = ((share / 100) * totalArea).toFixed(1);
+                            
+                            return (
+                                <div key={idx} style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column',
+                                    width: '100%', 
+                                    padding: '8px 14px', 
+                                    background: 'rgba(255,255,255,0.7)', 
+                                    borderRadius: 12,
+                                    border: '1px solid rgba(0,0,0,0.03)',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 700, color: theme.ownerText, fontSize: '0.9rem' }}>{name}</span>
+                                        <span style={{ fontWeight: 900, color: 'var(--blue-600)', fontSize: '0.85rem' }}>{share}%</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginTop: 2 }}>
+                                        {ownerArea} sq.m
+                                    </div>
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <p style={{ 
+                            fontSize: '1rem', 
+                            fontWeight: 700, 
+                            color: theme.ownerText,
+                            margin: 0,
+                            opacity: 0.9,
+                            textAlign: 'center'
+                        }}>
+                            {rec.owner_name}
+                        </p>
+                    )}
+                </div>
 
                 {/* Area Badge - Pill style at bottom */}
                 <div style={{ 
@@ -154,26 +199,25 @@ const LandParcelNode = memo(({ data }: { data: any }) => {
                 </div>
             </div>
 
-            {/* Hover Tooltip (Glassmorphism) - Enlarged */}
+            {/* Hover Tooltip (Glassmorphism) - Enlarged and Higher Z-Index */}
             {isHovered && (
                 <div style={{
                     position: 'absolute',
-                    top: '115%',
+                    top: '105%',
                     left: '50%',
                     transform: 'translateX(-50%)',
                     background: 'rgba(255, 255, 255, 0.98)',
-                    backdropFilter: 'blur(16px)',
+                    backdropFilter: 'blur(20px)',
                     border: '1px solid rgba(226, 232, 240, 1)',
                     borderRadius: '2rem',
                     padding: '24px 32px',
                     width: 'max-content',
                     minWidth: '340px',
-                    boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.3)',
-                    zIndex: 200,
+                    boxShadow: '0 50px 100px -20px rgba(0, 0, 0, 0.4)',
+                    zIndex: 2000,
                     textAlign: 'left',
                     pointerEvents: 'none',
-                    opacity: 1,
-                    transition: 'all 0.3s ease-out'
+                    animation: 'tooltipIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 4 }}>
@@ -187,9 +231,9 @@ const LandParcelNode = memo(({ data }: { data: any }) => {
                             <span style={{ color: '#1e293b', fontWeight: 700 }}>{rec.doc_type || 'Direct Entry'}</span>
                             
                             <span style={{ color: '#64748b', fontWeight: 600 }}>Anchored:</span>
-                            <span style={{ color: '#1e293b', fontWeight: 700 }}>{new Date(rec.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</span>
+                            <span style={{ color: '#1e293b', fontWeight: 700 }}>{rec.created_at ? new Date(rec.created_at).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Pending'}</span>
 
-                            <span style={{ color: '#64748b', fontWeight: 600 }}>Village:</span>
+                            <span style={{ color: '#64748b', fontWeight: 600 }}>Village ID:</span>
                             <span style={{ color: '#1e293b', fontWeight: 700 }}>{rec.village_id || 'N/A'}</span>
 
                             <span style={{ color: '#64748b', fontWeight: 600 }}>Khasra:</span>
@@ -253,121 +297,126 @@ export function LandLineageTree({
             const res = await fetch(`${apiUrl}/api/records/tree?${queryParams.toString()}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || "Failed to fetch tree")
-
             const rawRecords: TreeRecord[] = data.records || []
 
-            // Use a unique key for each record state (ID + Owner) to prevent deduplication of history
-            const uniqueRecords = rawRecords.map(r => ({
+            // 1. Robust Date Parser for registrar format: "D/M/YYYY H:mm AM/PM"
+            const parseLedgerDate = (dStr: string) => {
+                if (!dStr) return 0;
+                try {
+                    // Match "5/11/2026 01:22 PM"
+                    const parts = dStr.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)\s+(AM|PM)/i);
+                    if (parts) {
+                        let [_, d, m, y, h, min, meridiem] = parts;
+                        let hour = parseInt(h);
+                        if (meridiem.toUpperCase() === 'PM' && hour < 12) hour += 12;
+                        if (meridiem.toUpperCase() === 'AM' && hour === 12) hour = 0;
+                        return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), hour, parseInt(min)).getTime();
+                    }
+                    return new Date(dStr).getTime();
+                } catch (e) { return 0; }
+            };
+
+            // 2. Identify the absolute latest timestamp for the Survey
+            let latestTime = 0;
+            rawRecords.forEach(r => {
+                const t = parseLedgerDate(r.created_at);
+                if (t > latestTime) latestTime = t;
+            });
+
+            // 3. Normalize Owners & Global Deduplication
+            // (Keep only the EARLIEST occurrence of each unique State to show when it started)
+            const normalizeOwners = (s: string) => (s || '').split('|').map(x => x.trim()).sort().join('|');
+            
+            const stateMap = new Map<string, any>(); // Key: Survey-Owners, Value: Record
+            
+            rawRecords.forEach(r => {
+                const normalized = normalizeOwners(r.owner_name);
+                const surveyId = r.survey_no || r.khasra_no || 'NA';
+                const stateKey = `${surveyId}-${normalized}`;
+                const t = parseLedgerDate(r.created_at);
+
+                if (!stateMap.has(stateKey) || t < parseLedgerDate(stateMap.get(stateKey).created_at)) {
+                    stateMap.set(stateKey, { ...r, owner_name: normalized, timestamp: t });
+                }
+            });
+
+            // 4. Sort the unique states chronologically
+            const sortedUniqueRecords = Array.from(stateMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+            const uniqueRecords = sortedUniqueRecords.map(r => ({
                 ...r,
-                // Generate a unique node ID that includes owner to distinguish history
-                nodeId: `${r.record_id}-${r.owner_name}`.replace(/\s+/g, '_')
+                is_active: r.timestamp === latestTime,
+                nodeId: `node-${r.survey_no}-${r.owner_name}-${r.timestamp}`.replace(/[:|\s|.]+/g, '_')
             }));
 
             const newNodes: Node[] = []
             const newEdges: Edge[] = []
 
             const g = new dagre.graphlib.Graph()
-            g.setGraph({ rankdir: "TB", nodesep: 220, ranksep: 280 })
+            g.setGraph({ rankdir: "TB", nodesep: 150, ranksep: 200 })
             g.setDefaultEdgeLabel(() => ({}))
 
-            uniqueRecords.forEach((rec: any) => {
+            // Sort unique records chronologically
+            const sortedRecords = [...uniqueRecords];
+
+            sortedRecords.forEach((rec: any, idx: number) => {
+                // Each unique record (mutation version) becomes ONE node
                 newNodes.push({
                     id: rec.nodeId,
                     type: 'parcel',
                     data: { record: rec },
                     position: { x: 0, y: 0 },
-                })
+                });
 
-                g.setNode(rec.nodeId, { width: 260, height: 140 })
+                // Taller height to accommodate potential list of owners
+                g.setNode(rec.nodeId, { width: 320, height: 220 });
 
-                // 1. Spatial Parent (Splits/Subdivisions)
-                const possibleParentIds = [
-                    rec.parent_record_id,
-                    rec.parent_land_id,
-                ].filter(Boolean) as string[]
+                // Connect to the previous version in the chain
+                if (idx > 0) {
+                    const prevRec = sortedRecords[idx - 1];
+                    const mutationType = (rec.doc_type || 'MUTATION').toUpperCase();
 
-                for (const pId of possibleParentIds) {
-                    // Find the latest version of the parent record
-                    const parent = uniqueRecords.filter(r => 
+                    newEdges.push({
+                        id: `e-flow-${prevRec.nodeId}-${rec.nodeId}`,
+                        source: prevRec.nodeId,
+                        target: rec.nodeId,
+                        animated: true,
+                        label: mutationType,
+                        style: { stroke: '#3b82f6', strokeWidth: 3 },
+                        labelStyle: { fontSize: '10px', fill: '#3b82f6', fontWeight: 900, background: '#fff' },
+                        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#3b82f6' }
+                    });
+                    g.setEdge(prevRec.nodeId, rec.nodeId);
+                }
+
+                // Handle spatial parents (Splits from different Land IDs)
+                if (idx === 0 && (rec.parent_record_id || rec.parent_land_id)) {
+                    const pId = rec.parent_record_id || rec.parent_land_id;
+                    const parentVersions = rawRecords.filter(r => 
                         r.record_id === pId || 
                         r.record_id.replace(/^REC-/, '') === pId.replace(/^REC-/, '')
-                    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-
-                    if (parent && parent.nodeId !== rec.nodeId) {
+                    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                    
+                    if (parentVersions.length > 0) {
+                        const latestParent = parentVersions[0];
+                        const lpNodeId = `${latestParent.record_id}-${latestParent.owner_name}-${new Date(latestParent.created_at).getTime()}`.replace(/[:|\s]+/g, '_');
+                        
                         newEdges.push({
-                            id: `e-spatial-${parent.nodeId}-${rec.nodeId}`,
-                            source: parent.nodeId,
+                            id: `e-split-${lpNodeId}-${rec.nodeId}`,
+                            source: lpNodeId,
                             target: rec.nodeId,
                             animated: false,
-                            type: 'bezier',
-                            style: { strokeWidth: 2, stroke: '#cbd5e1', strokeDasharray: '6,4' },
-                            markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20, color: '#94a3b8' }
-                        })
-                        g.setEdge(parent.nodeId, rec.nodeId)
-                        break
+                            label: 'SUBDIVISION',
+                            style: { stroke: '#cbd5e1', strokeWidth: 2, strokeDasharray: '4,4' },
+                            labelStyle: { fontSize: '9px', fill: '#64748b' }
+                        });
                     }
                 }
-
-                // 2. Temporal Parent (Ownership History for the SAME record ID)
-                const sameIdRecords = uniqueRecords
-                    .filter((r: any) => r.record_id === rec.record_id)
-                    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-                
-                const myIndex = sameIdRecords.findIndex((r: any) => r.nodeId === rec.nodeId);
-                if (myIndex > 0) {
-                    const prevVersion = sameIdRecords[myIndex - 1];
-                    newEdges.push({
-                        id: `e-temporal-${prevVersion.nodeId}-${rec.nodeId}`,
-                        source: prevVersion.nodeId,
-                        target: rec.nodeId,
-                        animated: true, // Animated for history flow
-                        type: 'smoothstep',
-                        style: { strokeWidth: 3, stroke: '#3b82f6' },
-                        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: '#3b82f6' }
-                    })
-                    g.setEdge(prevVersion.nodeId, rec.nodeId)
-                }
-            })
-
-            // 1. Find all roots (nodes with no parents in the edges list)
-            const nodeIdsWithParents = new Set(newEdges.map(e => e.target))
-            const roots = newNodes.filter(n => !nodeIdsWithParents.has(n.id))
-            
-            // 2. If multiple roots exist, find the one most relevant to the user's request
-            let targetRootId = roots[0]?.id
-            if (roots.length > 1) {
-                // Try to find root that matches recordId or surveyKey
-                const matchingRoot = roots.find(r => 
-                    r.id === recordId || 
-                    (r.data.record as TreeRecord).survey_no === surveyKey
-                )
-                if (matchingRoot) targetRootId = matchingRoot.id
-            }
-
-            // 3. Keep only nodes/edges reachable from the target root (or all if we want to be safe)
-            // For now, let's just pick the first root's entire connected component to satisfy "Give only 1 tree"
-            const connectedNodeIds = new Set<string>()
-            if (targetRootId) {
-                const stack = [targetRootId]
-                connectedNodeIds.add(targetRootId)
-                while (stack.length > 0) {
-                    const currentId = stack.pop()!
-                    newEdges.forEach(edge => {
-                        if (edge.source === currentId && !connectedNodeIds.has(edge.target)) {
-                            connectedNodeIds.add(edge.target)
-                            stack.push(edge.target)
-                        }
-                    })
-                }
-            }
-
-            // Filter final set
-            const filteredNodes = targetRootId ? newNodes.filter(n => connectedNodeIds.has(n.id)) : newNodes
-            const filteredEdges = targetRootId ? newEdges.filter(e => connectedNodeIds.has(e.source) && connectedNodeIds.has(e.target)) : newEdges
+            });
 
             dagre.layout(g)
 
-            const finalNodes = filteredNodes.map((n) => {
+            const finalNodes = newNodes.map((n) => {
                 const nodeWithPos = g.node(n.id)
                 return {
                     ...n,
@@ -376,7 +425,7 @@ export function LandLineageTree({
             }) as Node[]
 
             setNodes(finalNodes)
-            setEdges(filteredEdges as Edge[])
+            setEdges(newEdges as Edge[])
         } catch (err: any) {
             setError(err.message)
         } finally {
@@ -490,6 +539,7 @@ export function LandLineageTree({
 
     return (
         <div style={{ position: 'relative' }}>
+            <TooltipStyles />
             {/* Visual Legend */}
             <div style={{ 
                 position: 'absolute', 
@@ -547,6 +597,12 @@ export function LandLineageTree({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     nodeTypes={nodeTypes}
+                    onNodeMouseEnter={(_: any, node: any) => {
+                        setNodes((nds) => nds.map((n) => n.id === node.id ? { ...n, zIndex: 1000 } : n));
+                    }}
+                    onNodeMouseLeave={(_: any, node: any) => {
+                        setNodes((nds) => nds.map((n) => n.id === node.id ? { ...n, zIndex: 1 } : n));
+                    }}
                     fitView
                     fitViewOptions={{ padding: 0.4 }}
                     proOptions={{ hideAttribution: true }}

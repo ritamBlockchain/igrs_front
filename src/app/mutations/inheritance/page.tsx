@@ -29,7 +29,8 @@ export default function InheritanceMutationPage() {
   // Form states
   const [landId, setLandId] = useState('');
   const [previousOwner, setPreviousOwner] = useState('');
-  const [heirs, setHeirs] = useState([{ name: '', share: '' }]);
+  const [totalArea, setTotalArea] = useState(0);
+  const [heirs, setHeirs] = useState([{ name: '', share: '', area: '' }]);
 
   // Auto-fill previous owner name when landId is entered
   useEffect(() => {
@@ -37,8 +38,10 @@ export default function InheritanceMutationPage() {
       if (landId.length >= 4) {
         try {
           const data = await api.getRecord(landId);
-          if (data && data.record && data.record.owner_name) {
-            setPreviousOwner(data.record.owner_name);
+          if (data && data.record) {
+            if (data.record.owner_name) setPreviousOwner(data.record.owner_name);
+            if (data.record.area) setTotalArea(Number(data.record.area));
+            else if (data.record.area_sq_m) setTotalArea(Number(data.record.area_sq_m));
           }
         } catch (err) {
           console.debug("Auto-fetch owner failed for ID:", landId);
@@ -52,15 +55,46 @@ export default function InheritanceMutationPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
 
-  const addHeir = () => setHeirs([...heirs, { name: '', share: '' }]);
+  const addHeir = () => setHeirs([...heirs, { name: '', share: '', area: '' }]);
   const removeHeir = (i: number) => setHeirs(heirs.filter((_, idx) => idx !== i));
-  const updateHeir = (i: number, field: 'name' | 'share', value: string) => {
+  
+  const updateHeir = (i: number, field: 'name' | 'share' | 'area', value: string) => {
     const updated = [...heirs];
     updated[i][field] = value;
+
+    if (field === 'area' && totalArea > 0) {
+      const areaVal = parseFloat(value);
+      if (!isNaN(areaVal)) {
+        updated[i].share = ((areaVal / totalArea) * 100).toFixed(2);
+      } else {
+        updated[i].share = '';
+      }
+    } else if (field === 'share' && totalArea > 0) {
+      const shareVal = parseFloat(value);
+      if (!isNaN(shareVal)) {
+        updated[i].area = ((shareVal / 100) * totalArea).toFixed(2);
+      } else {
+        updated[i].area = '';
+      }
+    }
     setHeirs(updated);
   };
 
+  // Sync areas if totalArea changes
+  useEffect(() => {
+    if (totalArea > 0) {
+      setHeirs(prev => prev.map(h => {
+        const shareVal = parseFloat(h.share);
+        if (!isNaN(shareVal)) {
+          return { ...h, area: ((shareVal / 100) * totalArea).toFixed(2) };
+        }
+        return h;
+      }));
+    }
+  }, [totalArea]);
+
   const totalShares = heirs.reduce((sum, h) => sum + (parseFloat(h.share) || 0), 0);
+  const isSharesValid = Math.abs(totalShares - 100) < 0.01;
 
   const handleCreateMutation = async () => {
     if (!landId || !previousOwner) {
@@ -72,20 +106,23 @@ export default function InheritanceMutationPage() {
       setResult({ success: false, message: 'At least one heir with name and share is required' });
       return;
     }
-    if (Math.abs(totalShares - 100) > 0.01) {
-      setResult({ success: false, message: `Heir shares must total 100%. Current total: ${totalShares.toFixed(1)}%` });
+    if (!isSharesValid) {
+      setResult({ success: false, message: `Heir shares must total exactly 100%. Current total: ${totalShares.toFixed(1)}%` });
       return;
     }
 
     setSubmitting(true);
     setResult(null);
     try {
+      // Format: Name:Share%|Name2:Share%
+      const formattedOwners = validHeirs.map(h => `${h.name}:${h.share}`).join('|');
+      
       await api.createMutation({
         record_id: landId,
         current_owner: previousOwner,
-        new_owner: validHeirs.map(h => h.name).join(', '),
+        new_owner: formattedOwners,
         mutation_type: 'Inheritance',
-        supporting_doc: `INHERITANCE|${landId}|${previousOwner}`,
+        supporting_doc: `INHERITANCE|${landId}|${previousOwner}|${new Date().toISOString()}`,
         initiated_by: role || 'Revenue Admin',
         role: role || 'Revenue Admin',
         sub_divisions: validHeirs.map(h => ({ owner_name: h.name, area: h.share })),
@@ -160,41 +197,92 @@ export default function InheritanceMutationPage() {
 
       {/* Step Content */}
       {currentStep === 1 && (
-        <StepCard step={STEPS[0]} role={role} onSubmit={handleCreateMutation} loading={submitting} result={result}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-            <div><label className="label">Land ID *</label><input className="input" placeholder="e.g. REC-2026-13" value={landId} onChange={e => setLandId(e.target.value)} /></div>
-            <div><label className="label">Previous Owner (Deceased) *</label><input className="input" placeholder="Full name" value={previousOwner} onChange={e => setPreviousOwner(e.target.value)} /></div>
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--slate-100)', paddingTop: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <StepCard 
+          step={STEPS[0]} 
+          role={role} 
+          onSubmit={handleCreateMutation} 
+          loading={submitting} 
+          result={result}
+          disabled={!isSharesValid}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 20 }}>
               <div>
-                <h3 style={{ fontSize: 16, margin: 0 }}>Heirs & Shares</h3>
-                <p style={{ fontSize: 12, color: totalShares === 100 ? 'var(--success)' : 'var(--warning)', marginTop: 4 }}>
-                  Total: {totalShares.toFixed(1)}% {totalShares === 100 ? '✓' : `(must equal 100%)`}
-                </p>
+                <label className="label">Land ID *</label>
+                <input className="input" placeholder="e.g. REC-2026-13" value={landId} onChange={e => setLandId(e.target.value)} />
               </div>
-              <button className="btn btn-outline" onClick={addHeir} style={{ padding: '6px 12px', fontSize: 12 }}>
-                <Plus size={14} /> Add Heir
-              </button>
+              <div>
+                <label className="label">Total Land Area (sq. m)</label>
+                <input className="input" value={totalArea ? `${totalArea} sqm` : (landId ? 'Verifying Record...' : 'Total Area')} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)', fontWeight: 700 }} />
+              </div>
             </div>
-            {heirs.map((heir, i) => (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'end' }}>
-                <div style={{ flex: 1 }}>
-                  <label className="label">Heir Name</label>
-                  <input className="input" placeholder="Full name" value={heir.name} onChange={e => updateHeir(i, 'name', e.target.value)} />
-                </div>
-                <div style={{ width: 140 }}>
-                  <label className="label">Share (%)</label>
-                  <input className="input" type="number" placeholder="e.g. 50" value={heir.share} onChange={e => updateHeir(i, 'share', e.target.value)} />
-                </div>
-                {heirs.length > 1 && (
-                  <button onClick={() => removeHeir(i)} style={{ color: 'var(--error)', padding: 8, cursor: 'pointer', background: 'none', border: 'none' }}>
-                    <Trash2 size={16} />
-                  </button>
-                )}
+
+            <div>
+              <label className="label">Previous Owner (Deceased) *</label>
+              <input className="input" placeholder="Full name" value={previousOwner} onChange={e => setPreviousOwner(e.target.value)} />
+            </div>
+
+            {/* Heirs Section */}
+            <div style={{ padding: '24px', background: 'var(--slate-50)', borderRadius: 16, border: '1px dashed var(--slate-300)', marginTop: 8 }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h4 style={{ margin: 0 }}>Heirs & Shares</h4>
+                    <p style={{ fontSize: 11, color: 'var(--slate-500)', marginTop: 2 }}>Division can be by % or sq. m</p>
+                  </div>
+                  <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={addHeir}>+ Add Heir</button>
+               </div>
+
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {heirs.map((h, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 40px', gap: 12, alignItems: 'end' }}>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Heir Name</label>
+                        <input className="input" placeholder="Full name" value={h.name} onChange={e => updateHeir(i, 'name', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Area (sqm) *</label>
+                        <input className="input" type="number" step="0.01" placeholder="e.g. 500" value={h.area} onChange={e => updateHeir(i, 'area', e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: 10 }}>Share (%)</label>
+                        <input className="input" type="number" step="0.01" placeholder="Calculated" value={h.share} onChange={e => updateHeir(i, 'share', e.target.value)} />
+                      </div>
+                      <button onClick={() => removeHeir(i)} style={{ padding: 10, background: 'none', border: 'none', color: 'var(--red-500)', cursor: 'pointer' }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--slate-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL SHARES</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: isSharesValid ? 'var(--success)' : 'var(--error)' }}>{totalShares.toFixed(1)}%</div>
+                     </div>
+                     {totalArea > 0 && (
+                       <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate-500)' }}>TOTAL AREA</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--slate-700)' }}>{((totalShares / 100) * totalArea).toFixed(2)} / {totalArea} sqm</div>
+                       </div>
+                     )}
+                  </div>
+                  {!isSharesValid && heirs.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <AlertTriangle size={12} /> Total must equal exactly 100%
+                    </div>
+                  )}
+               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div>
+                <label className="label">Registrar ID</label>
+                <input className="input" value={role || 'Admin'} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
               </div>
-            ))}
+              <div>
+                <label className="label">Mutation Type</label>
+                <input className="input" value="INHERITANCE" readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
+              </div>
+            </div>
           </div>
         </StepCard>
       )}
@@ -253,9 +341,10 @@ export default function InheritanceMutationPage() {
   );
 }
 
-function StepCard({ step, role, children, onSubmit, loading, result }: {
+function StepCard({ step, role, children, onSubmit, loading, result, disabled }: {
   step: Step; role: string | null; children: React.ReactNode;
   onSubmit?: () => void; loading?: boolean; result?: {success: boolean, message: string} | null;
+  disabled?: boolean;
 }) {
   const canAct = role ? step.allowedRoles.includes(role) : false;
   return (
@@ -284,9 +373,9 @@ function StepCard({ step, role, children, onSubmit, loading, result }: {
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
         <button
           className="btn btn-primary"
-          style={{ opacity: canAct && !loading ? 1 : 0.4, pointerEvents: canAct && !loading ? 'auto' : 'none' }}
+          style={{ opacity: (canAct && !loading && !disabled) ? 1 : 0.4, pointerEvents: (canAct && !loading && !disabled) ? 'auto' : 'none' }}
           onClick={onSubmit}
-          disabled={!canAct || loading}
+          disabled={!canAct || loading || disabled}
         >
           {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
         </button>
