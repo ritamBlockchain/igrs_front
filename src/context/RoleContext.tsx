@@ -26,7 +26,7 @@ export const ROLE_REGISTRY: RoleInfo[] = [
   { role: 'Revenue Admin', label: 'Revenue Admin', description: 'Land registration, mutations, Jantri rates, document management', icon: '🏛️', color: '#0ea5e9' },
   { role: 'Revenue Officer', label: 'Revenue Officer', description: 'Record queries, inheritance approval, owner private data', icon: '📋', color: '#14b8a6' },
   { role: 'Collector', label: 'Collector (Tehsildar)', description: 'Approve mutations, verify workflows, field operations', icon: '✅', color: '#f59e0b' },
-  { role: 'Court Registrar', label: 'Court Registrar', description: 'Sale/gift mutations, legal data access', icon: '⚖️', color: '#8b5cf6' },
+  { role: 'Court Registrar', label: 'Court Registrar', description: 'Court order mutations, legal data access', icon: '⚖️', color: '#8b5cf6' },
   { role: 'Auditor', label: 'Auditor', description: 'Full read access, audit trails, private data verification', icon: '🔍', color: '#ec4899' },
   { role: 'Bank', label: 'Bank Officer', description: 'Financial private data, mortgage records, lien management', icon: '🏦', color: '#10b981' },
   { role: 'Legal Authority', label: 'Legal Authority', description: 'Court orders, freeze/unfreeze, legal private data', icon: '🔒', color: '#ef4444' },

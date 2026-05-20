@@ -91,21 +91,53 @@ export default function LandDetailPage() {
     setVerifying(true);
     setVerifyResult(null);
     try {
-      let res;
+      let success = false;
+      let details: any = {};
+      let extractedMetadata: any = null;
+      let computedRecordHash: string = '';
+      let rawRes: any = null;
+
       if (uploadedFile) {
-        res = await api.verifyLandDocument(id as string, uploadedFile);
+        const docRes = await api.verifyLandDocument(id as string, uploadedFile);
+        success = docRes.success;
+        details = docRes.verification_details || {};
+        extractedMetadata = docRes.extracted_metadata;
+        computedRecordHash = docRes.computed_record_hash || '';
+        rawRes = docRes;
       } else {
-        res = await api.verifyLandRecord(id as string, verifyHash);
+        const recordRes = await api.verifyLandRecord(id as string, verifyHash);
+        let parsedResult: any = {};
+        try {
+          parsedResult = JSON.parse(recordRes.result);
+        } catch (e) {
+          console.error("Failed to parse verification result", e);
+        }
+        success = !!parsedResult.valid;
+        details = {
+          source: 'Hyperledger Fabric (Private Ledger)',
+          merkle_root: parsedResult.expectedHash,
+          polygon_tx: parsedResult.lastTxId,
+          anchored_at: parsedResult.updatedAt,
+          anchored_hash: parsedResult.expectedHash,
+          fabric_record_hash: parsedResult.expectedHash,
+          live_onchain_confirmation: false,
+          fields_match: parsedResult.valid,
+          fabric_status: parsedResult.status,
+        };
+        rawRes = {
+          success,
+          status: parsedResult.status,
+          record_id: parsedResult.recordId,
+          computed_record_hash: parsedResult.inputDocumentHash,
+          verification_details: details,
+        };
       }
 
-      console.log("[Verification] Backend Response:", res);
+      console.log("[Verification] Backend Response:", rawRes);
       
-      const success = res.success;
-      const details = res.verification_details || {};
-      
-      if (res.extracted_metadata) {
-        console.log("[Verification] Extracted OCR Metadata:", res.extracted_metadata);
-        console.log("[Verification] Computed Record Hash:", res.computed_record_hash);
+      if (extractedMetadata) {
+        console.log("[Verification] Extracted OCR Metadata:", extractedMetadata);
+        console.log("[Verification] Computed Record Hash:", computedRecordHash);
       }
 
       setVerifyResult({ 
@@ -114,7 +146,7 @@ export default function LandDetailPage() {
           ? 'Verification Successful! The document data matches the Polygon immutable anchor.' 
           : 'Verification Failed. The provided document data does not match the blockchain records.',
         data: {
-          ...res,
+          ...rawRes,
           verification: details // For backward compatibility with UI components
         }
       });

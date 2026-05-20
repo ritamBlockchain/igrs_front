@@ -223,6 +223,23 @@ export default function BulkOperationsPage() {
     reader.readAsText(file);
   };
 
+  const mapFields = (f: any, sessionID: string): ParsedRecord => ({
+    record_id: f.record_id || `PDF-${Math.floor(Math.random() * 1000)}`,
+    owner_name: f.owner_name || f.ownerName || 'N/A',
+    father_name: f.father_name || f.fatherName || '',
+    owner_id: f.owner_id || f.ownerId || 'N/A',
+    survey_no: f.survey_no || f.surveyNumber || '-',
+    khasra_no: f.khasra_no || f.khasraNumber || '-',
+    area_sq_m: parseFloat(f.area_sq_m) || parseFloat(f.area) || 0,
+    land_type: f.land_type || f.landType || 'PDF Record',
+    village_name: f.village_name || f.village || '-',
+    'tehsil/taluka': f['tehsil/taluka'] || f.taluka_name || f.tehsil || f.taluka || f.block_name || '-',
+    district_name: f.district_name || f.district || '-',
+    ownership_type: f.ownership_type || f.ownershipType || 'Full Ownership',
+    status: 'pending',
+    ocr_session_id: sessionID
+  });
+
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -244,40 +261,33 @@ export default function BulkOperationsPage() {
       if (!response.ok) throw new Error(`Server responded with ${response.status}`);
       const result = await response.json();
       
-      if (result.extraction && result.extraction.fields) {
-        const f = result.extraction.fields;
-        const data: ParsedRecord = {
-          record_id: f.record_id || `PDF-${Math.floor(Math.random() * 1000)}`,
-          owner_name: f.owner_name || f.ownerName || 'N/A',
-          father_name: f.father_name || f.fatherName || '',
-          owner_id: f.owner_id || f.ownerId || 'N/A',
-          survey_no: f.survey_no || f.surveyNumber || '-',
-          khasra_no: f.khasra_no || f.khasraNumber || '-',
-          area_sq_m: parseFloat(f.area_sq_m) || parseFloat(f.area) || 0,
-          land_type: f.land_type || f.landType || 'PDF Record',
-          village_name: f.village_name || f.village || '-',
-          'tehsil/taluka': f['tehsil/taluka'] || f.taluka_name || f.tehsil || f.taluka || f.block_name || '-',
-          district_name: f.district_name || f.district || '-',
-          ownership_type: f.ownership_type || f.ownershipType || 'Full Ownership',
-          status: 'pending',
-          ocr_session_id: result.session_id
-        };
+      let data: ParsedRecord[] = [];
 
-        // Generate SHA-256 hash for the record
-        data.keccak256_hash = await generateMetadataHash(data);
-
-        // Log the PDF extraction
-        console.log('PDF extracted:', JSON.stringify(data, null, 2));
-
-        // Log the keccak256 hash
-        console.log('Keccak256 Merkle Hash (Leaf Node):');
-        console.log(`Record (${data.record_id}): ${data.keccak256_hash}`);
-
-        setParsedData([data]);
-        setIngestionStatus('ready');
+      if (result.bulk && Array.isArray(result.results)) {
+        data = await Promise.all(result.results.map(async (item: any) => {
+          const record = mapFields(item.extraction.fields, item.session_id);
+          record.keccak256_hash = await generateMetadataHash(record);
+          return record;
+        }));
+      } else if (result.extraction && result.extraction.fields) {
+        const record = mapFields(result.extraction.fields, result.session_id);
+        record.keccak256_hash = await generateMetadataHash(record);
+        data = [record];
       } else {
         throw new Error("Could not extract data from PDF");
       }
+
+      // Log the PDF extraction
+      console.log('PDF extracted:', JSON.stringify(data, null, 2));
+
+      // Log the keccak256 hashes
+      console.log('Keccak256 Merkle Hashes (Leaf Nodes):');
+      data.forEach(r => {
+        console.log(`Record (${r.record_id}): ${r.keccak256_hash}`);
+      });
+
+      setParsedData(data);
+      setIngestionStatus('ready');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'PDF extraction failed');
       setIngestionStatus('error');
@@ -392,31 +402,66 @@ export default function BulkOperationsPage() {
           },
           body: JSON.stringify(parsedData)
         });
-      } else if (activeTab === 'pdf' && parsedData[0]?.ocr_session_id) {
-        // Special flow for OCR commit: use the staged session
-        const record = parsedData[0];
-        response = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/ocr-commit`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-User-Role': localStorage.getItem('jade_role') || 'Admin'
-          },
-          body: JSON.stringify({
-            session_id: record.ocr_session_id,
-            confirm: true,
-            owner_name: record.owner_name,
-            father_name: record.father_name,
-            survey_no: record.survey_no,
-            khasra_no: record.khasra_no,
-            area: record.area_sq_m,
-            doc_type: record.land_type,
-            village_name: record.village_name,
-            taluka_name: record['tehsil/taluka'],
-            district_name: record.district_name,
-            ownership_type: record.ownership_type,
-            record_id: record.record_id
-          })
-        });
+      } else if (activeTab === 'pdf' && parsedData.length > 0 && parsedData[0]?.ocr_session_id) {
+        // Special flow for OCR commit: commit each session
+        const newData = [...parsedData];
+        let totalFailed = 0;
+        
+        for (let i = 0; i < newData.length; i++) {
+          const record = newData[i];
+          if (!record.ocr_session_id) continue;
+          
+          try {
+            const res = await fetch(`${CONFIG.API_BASE_URL}/api/ingest/ocr-commit`, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'X-User-Role': localStorage.getItem('jade_role') || 'Admin'
+              },
+              body: JSON.stringify({
+                session_id: record.ocr_session_id,
+                confirm: true,
+                owner_name: record.owner_name,
+                father_name: record.father_name,
+                survey_no: record.survey_no,
+                khasra_no: record.khasra_no,
+                area: record.area_sq_m,
+                doc_type: record.land_type,
+                village_name: record.village_name,
+                taluka_name: record['tehsil/taluka'],
+                district_name: record.district_name,
+                ownership_type: record.ownership_type,
+                record_id: record.record_id
+              })
+            });
+            
+            const result = await res.json();
+            const ok = res.ok || result.ok || result.record_id;
+            const isPrev = result.previously_uploaded || result.idempotent || result.message === 'Data previously uploaded';
+            
+            newData[i] = {
+              ...record,
+              status: ok ? 'success' : 'error',
+              is_duplicate: !!isPrev,
+              record_id: result.record?.record_id || result.record_id || record.record_id,
+              error: ok ? (isPrev ? 'Data previously uploaded' : undefined) : (result.error || 'Ingestion failed')
+            };
+            
+            if (!ok) totalFailed++;
+          } catch (e) {
+            newData[i] = { ...record, status: 'error', error: 'Connection failed' };
+            totalFailed++;
+          }
+          
+          setProgress(Math.round(((i + 1) / newData.length) * 100));
+        }
+        
+        setParsedData(newData);
+        if (totalFailed > 0) {
+          setErrorMessage(`Ingestion completed with ${totalFailed} errors.`);
+        }
+        setIngestionStatus('completed');
+        return; // Exit early as we've handled all records
       } else {
         const formData = new FormData();
         if (file) formData.append('file', file);

@@ -234,15 +234,24 @@ export const api = {
       }
       return res.json() as Promise<{
         success: boolean;
-        verification: {
-          hash_match: boolean;
-          document_hash: string;
-          blockchain_doc_hash: string;
-          record_hash: string;
-          blockchain_record_hash: string;
-          fields_extracted: any;
-          ocr_confidence: any;
-        }
+        status: string;
+        filename: string;
+        record_id: string;
+        extracted_metadata?: any;
+        computed_record_hash?: string;
+        verification_details: {
+          source: string;
+          merkle_root: string;
+          polygon_tx: string;
+          anchored_at: string;
+          anchored_hash: string;
+          fabric_record_hash: string;
+          live_onchain_confirmation: boolean;
+          fields_match: boolean;
+          field_details?: Record<string, string>;
+          merkle_proof?: any;
+          fabric_status: string;
+        };
       }>;
     });
   },

@@ -16,7 +16,7 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { id: 1, title: 'Create Sale Mutation', actor: 'Registrar', allowedRoles: ['Court Registrar', 'Admin'], description: 'Register sale deed with seller/buyer details' },
+  { id: 1, title: 'Create Sale Mutation', actor: 'Registrar', allowedRoles: ['Court Registrar', 'Admin', 'Revenue Admin'], description: 'Register sale deed with seller/buyer details' },
   { id: 2, title: 'Verify (Talati)', actor: 'Talati / Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Field verification by Talati' },
   { id: 3, title: 'Approve (Tehsildar)', actor: 'Tehsildar / Collector', allowedRoles: ['Collector', 'Admin'], description: 'Administrative approval by Tehsildar' },
   { id: 4, title: 'Finalize Transfer', actor: 'Talati / Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Execute ownership transfer on ledger' },

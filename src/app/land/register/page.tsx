@@ -18,6 +18,8 @@ export default function RegisterLandPage() {
   const [indexCopied, setIndexCopied] = useState(false);
   const [extractionLoading, setExtractionLoading] = useState(false);
   const [ocrSessionId, setOcrSessionId] = useState<string | null>(null);
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [submitResultMessage, setSubmitResultMessage] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({

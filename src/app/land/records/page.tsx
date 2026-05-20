@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { Search, ChevronRight, RefreshCw } from "lucide-react";
+import { Search, ChevronRight, ChevronLeft, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useData } from "@/context/DataContext";
 
@@ -9,13 +9,25 @@ export default function LandRecordsPage() {
   const { records, recordsLoading, recordsError, recordsTotal, fetchRecords } = useData();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
-  // Fetch records on mount or when filters change
+  // Reset page when filters change
   useEffect(() => {
-    fetchRecords(1, 50, { search, land_type: typeFilter });
+    setPage(1);
+  }, [search, typeFilter]);
+
+  // Fetch ALL records on mount or filter change (so we can paginate locally)
+  useEffect(() => {
+    fetchRecords(1, 500, { search, land_type: typeFilter });
   }, [fetchRecords, search, typeFilter]);
 
-  const displayRecords = records;
+  const filteredRecords = records.filter(r =>
+    !typeFilter || r.land_type?.toLowerCase() === typeFilter.toLowerCase()
+  );
+
+  const localTotal = filteredRecords.length;
+  const displayRecords = filteredRecords.slice((page - 1) * limit, page * limit);
 
   return (
     <div className="animate-in">
@@ -28,9 +40,9 @@ export default function LandRecordsPage() {
       <div className="card" style={{ padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, padding: '0 8px', color: 'var(--slate-400)' }}>
           <Search size={16} />
-          <input 
-            className="input" 
-            placeholder="Search by Record ID or Owner name..." 
+          <input
+            className="input"
+            placeholder="Search by Record ID or Owner name..."
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ border: 'none', padding: '8px 0', boxShadow: 'none' }}
           />
@@ -46,10 +58,10 @@ export default function LandRecordsPage() {
       {/* Results count */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
-          {recordsLoading ? 'Loading...' : `Showing ${displayRecords.length} of ${recordsTotal} records`}
+          {recordsLoading ? 'Loading...' : `Showing ${localTotal > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, localTotal)} of ${localTotal} records`}
         </div>
-        <button 
-          onClick={() => fetchRecords(1, 50, { search, land_type: typeFilter })} 
+        <button
+          onClick={() => fetchRecords(1, 500, { search, land_type: typeFilter })}
           disabled={recordsLoading}
           className="btn btn-outline"
           style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -58,7 +70,7 @@ export default function LandRecordsPage() {
           Refresh
         </button>
       </div>
-      
+
       {recordsError && (
         <div className="card" style={{ padding: 16, marginBottom: 16, background: 'var(--error-bg)', color: 'var(--error)', border: '1px solid var(--error)' }}>
           Error: {recordsError}
@@ -70,7 +82,7 @@ export default function LandRecordsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--slate-100)' }}>
-              {['Record ID', 'Owner', 'Village', 'Area (sqm)', 'Type', 'Status', 'Ver.', ''].map(h => (
+              {['SL. No.', 'Record ID', 'Owner', 'Village', 'Area (sqm)', 'Type', 'Status', 'Ver.', ''].map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
               ))}
             </tr>
@@ -78,19 +90,22 @@ export default function LandRecordsPage() {
           <tbody>
             {recordsLoading ? (
               <tr>
-                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
+                <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
                   Loading records from Fabric...
                 </td>
               </tr>
             ) : displayRecords.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
+                <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
                   No records found
                 </td>
               </tr>
             ) : (
-              displayRecords.map(r => (
+              displayRecords.map((r, i) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '14px 16px', color: 'var(--slate-500)', fontSize: 13, fontWeight: 500 }}>
+                    {(page - 1) * limit + i + 1}
+                  </td>
                   <td style={{ padding: '14px 16px' }}>
                     <span className="mono" style={{ fontWeight: 600, color: 'var(--blue-700)' }}>{r.record_id}</span>
                   </td>
@@ -122,6 +137,33 @@ export default function LandRecordsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {localTotal > limit && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+            Page {page} of {Math.max(1, Math.ceil(localTotal / limit))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1 || recordsLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.min(Math.ceil(localTotal / limit), p + 1))}
+              disabled={page >= Math.ceil(localTotal / limit) || recordsLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
