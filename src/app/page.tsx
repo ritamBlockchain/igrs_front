@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useRole, ROLE_REGISTRY } from "@/context/RoleContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useData } from "@/context/DataContext";
@@ -9,9 +11,16 @@ import Link from "next/link";
 import styles from './landing.module.css';
 
 export default function HomePage() {
-  const { role, isLoading } = useRole();
+  const { role, token, isLoading } = useRole();
+  const router = useRouter();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && (!role || !token)) {
+      router.push('/login');
+    }
+  }, [role, token, isLoading, router]);
+
+  if (isLoading || !role || !token) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-body)' }}>
         <motion.div
@@ -27,147 +36,13 @@ export default function HomePage() {
           >
             <Layers size={24} color="#fff" />
           </motion.div>
-          <div style={{ fontSize: 14, color: 'var(--text-muted)', fontWeight: 500 }}>Initializing Fabric Gateway...</div>
+          <div style={{ fontSize: 14, color: 'var(--text-muted)', fontWeight: 500 }}>Initializing...</div>
         </motion.div>
       </div>
     );
   }
 
-  if (role) return <Dashboard />;
-  return <LandingPage />;
-}
-
-/* ================================================================
-   LANDING PAGE — Role Selection
-   ================================================================ */
-function LandingPage() {
-  const { setRole } = useRole();
-  const { theme, toggleTheme } = useTheme();
-  const { systemInfo, stats } = useData();
-
-  const features = [
-    { icon: <Database size={18} />, label: `${stats?.total_records || 0} Records On-Chain` },
-    { icon: <GitBranch size={18} />, label: systemInfo?.fabricConnected ? 'Fabric Connected' : 'Multi-Org Fabric' },
-    { icon: <Lock size={18} />, label: 'RBAC Secured' },
-    { icon: <Zap size={18} />, label: 'Polygon L2 Anchored' },
-  ];
-
-  return (
-    <div className={styles.landing}>
-      <div className={styles.blob1} />
-      <div className={styles.blob2} />
-      <div className={styles.blob3} />
-      <div className={styles.gridLines} />
-
-      {/* Header */}
-      <motion.header
-        className={styles.header}
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <div className={styles.logoRow}>
-          <motion.div
-            className={styles.logoIcon}
-            whileHover={{ scale: 1.1, rotate: -5 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <Layers size={24} color="#fff" />
-          </motion.div>
-          <div>
-            <div className={styles.brand}>JADE Registry</div>
-            <div className={styles.tagline}>Hyperledger Fabric Land Record System</div>
-          </div>
-        </div>
-        <div className={styles.headerRight}>
-          <motion.button
-            className={styles.themeToggle}
-            onClick={toggleTheme}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={theme}
-                initial={{ rotate: -90, opacity: 0 }}
-                animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: 90, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-              </motion.div>
-            </AnimatePresence>
-          </motion.button>
-          <div className={styles.headerBadge}>
-            <Shield size={14} />
-            <span>Blockchain Verified</span>
-          </div>
-        </div>
-      </motion.header>
-
-      {/* Hero */}
-      <motion.section
-        className={styles.hero}
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.2 }}
-      >
-        <h2 className={styles.heroTitle}>
-          Select Your Role to Continue
-        </h2>
-        <p className={styles.heroSub}>
-          Access is governed by on-chain RBAC policy. Choose your role to view permitted operations and workflows.
-        </p>
-        <div className={styles.featureRow}>
-          {features.map((f, i) => (
-            <motion.div
-              key={f.label}
-              className={styles.featureChip}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 + i * 0.1 }}
-            >
-              {f.icon}
-              <span>{f.label}</span>
-            </motion.div>
-          ))}
-        </div>
-      </motion.section>
-
-      {/* Role Grid */}
-      <div className={styles.grid}>
-        {ROLE_REGISTRY.map((r, i) => (
-          <motion.button
-            key={r.role}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 + i * 0.06, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-            whileHover={{ y: -8, transition: { duration: 0.25 } }}
-            whileTap={{ scale: 0.97 }}
-            className={styles.roleCard}
-            onClick={() => setRole(r.role)}
-          >
-            <div className={styles.cardTop}>
-              <span className={styles.roleEmoji}>{r.icon}</span>
-              <ArrowRight size={16} className={styles.arrow} />
-            </div>
-            <h3 className={styles.roleName}>{r.label}</h3>
-            <p className={styles.roleDesc}>{r.description}</p>
-            <div className={styles.cardAccent} style={{ background: r.color }} />
-          </motion.button>
-        ))}
-      </div>
-
-      <motion.footer
-        className={styles.footer}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1 }}
-      >
-        <p>Fabric Channel: <strong>{systemInfo?.channel || 'landrecord-channel'}</strong> · Chaincode: <strong>{systemInfo?.chaincode || 'landrecord'} v{systemInfo?.version || '1.0'}</strong> · Network: <strong>{systemInfo?.network || 'Polygon Amoy (L2)'}</strong></p>
-      </motion.footer>
-    </div>
-  );
+  return <Dashboard />;
 }
 
 /* ================================================================

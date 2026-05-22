@@ -235,19 +235,19 @@ export default function LandDetailPage() {
         const normalizedStatus = (fields.status || 'PENDING').toUpperCase() === 'PENDING' ? 'ACTIVE' : (fields.status || 'ACTIVE');
 
         const payload = {
-          record_id: fields.record_id || (id as string),
+          recordId: fields.record_id || (id as string),
           status: normalizedStatus,
-          owner_name: (fields.owner_name || '').trim(),
-          father_name: (fields.father_name || '').trim(),
-          owner_id: (fields.owner_id || '').trim(),
-          survey_no: (fields.survey_no || '').trim(),
-          khasra_no: (fields.khasra_no || '').trim(),
-          area_sq_m: (fields.area_sq_m || fields.area || '').trim(),
-          land_type: (fields.land_type || '').trim(),
-          village_name: (fields.village_name || '').trim(),
-          'tehsil/taluka': (fields['tehsil/taluka'] || fields.block_name || '').trim(),
-          district_name: (fields.district_name || '').trim(),
-          ownership_type: (fields.ownership_type || '').trim(),
+          ownerName: "",
+          fatherName: "",
+          ownerId: (fields.owner_name || fields.owner_id || '').trim(),
+          surveyNumber: (fields.survey_no || '').trim(),
+          khasraNumber: (fields.khasra_no || '').trim(),
+          area: (fields.area_sq_m || fields.area || '').trim(),
+          landType: (fields.land_type || '').trim(),
+          village: (fields.village_name || '').trim(),
+          tehsil: (fields['tehsil/taluka'] || fields.block_name || '').trim(),
+          district: (fields.district_name || '').trim(),
+          ownershipType: (fields.ownership_type || '').trim(),
         };
         const canonicalJSON = JSON.stringify(payload);
         const hash = await generateMetadataHash(canonicalJSON);
@@ -421,11 +421,12 @@ export default function LandDetailPage() {
     doc.setFont('helvetica', 'bold');
     doc.text(`RECORD ID: ${record.record_id}`, 25, 55);
     doc.text(`OWNER: ${record.owner_name}`, 25, 65);
+    doc.text(`FATHER: ${record.father_name || 'N/A'}`, 25, 75);
 
     // 5. Details Table
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    const startY = 80;
+    const startY = 90;
     const details = [
       ['Village', record.village_name || 'N/A'],
       ['Taluka/Block', record.taluka_name || record.block_name || 'N/A'],

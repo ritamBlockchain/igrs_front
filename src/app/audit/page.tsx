@@ -1,25 +1,24 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useData } from "@/context/DataContext";
 
 export default function AuditPage() {
   const { auditEntries, auditTotal, auditLoading, fetchAudit } = useData();
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
-  // Fetch audit on mount
+  // Fetch all audit entries on mount (large limit for local pagination)
   useEffect(() => {
-    fetchAudit(1, 20);
-  }, [fetchAudit]);
+    fetchAudit(page, limit, search);
+  }, [fetchAudit, page, search]);
 
-  const filtered = auditEntries.filter(e => {
-    const matchSearch = !search || 
-      e.action.toLowerCase().includes(search.toLowerCase()) ||
-      e.record_id.toLowerCase().includes(search.toLowerCase()) ||
-      e.user_name.toLowerCase().includes(search.toLowerCase());
-    return matchSearch;
-  });
+  // Reset page when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   // Count failures (actions with error indicators)
   const failureCount = auditEntries.filter(e => 
@@ -37,6 +36,22 @@ export default function AuditPage() {
         </div>
       </div>
 
+      {/* Results count */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+          {auditLoading ? 'Loading...' : `Showing ${auditTotal > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, auditTotal)} of ${auditTotal} entries`}
+        </div>
+        <button 
+          onClick={() => fetchAudit(page, limit, search)} 
+          disabled={auditLoading}
+          className="btn btn-outline"
+          style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <RefreshCw size={14} style={{ animation: auditLoading ? 'spin 1s linear infinite' : undefined }} />
+          Refresh
+        </button>
+      </div>
+
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--slate-100)', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -49,20 +64,11 @@ export default function AuditPage() {
               style={{ border: 'none', boxShadow: 'none', padding: '6px 0' }} 
             />
           </div>
-          <button 
-            onClick={() => fetchAudit(1, 20)} 
-            disabled={auditLoading}
-            className="btn btn-outline"
-            style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <RefreshCw size={14} style={{ animation: auditLoading ? 'spin 1s linear infinite' : undefined }} />
-            Refresh
-          </button>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--slate-100)' }}>
-              {['#', 'Timestamp', 'Action', 'Resource', 'Actor', 'Status'].map(h => (
+              {['SL. No.', 'Timestamp', 'Action', 'Resource', 'Actor', 'Status'].map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase' }}>{h}</th>
               ))}
             </tr>
@@ -74,16 +80,18 @@ export default function AuditPage() {
                   Loading audit trail from Fabric...
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : auditEntries.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
                   No audit entries found
                 </td>
               </tr>
             ) : (
-              filtered.map(e => (
-                <tr key={e.id} style={{ borderBottom: '1px solid var(--slate-50)' }}>
-                  <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--slate-400)' }}>#{e.id}</td>
+              auditEntries.map((e, i) => (
+                <tr key={e.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={ev => (ev.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '12px 16px', color: 'var(--slate-500)', fontSize: 13, fontWeight: 500 }}>
+                    {(page - 1) * limit + i + 1}
+                  </td>
                   <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--slate-500)' }}>{new Date(e.timestamp).toLocaleString()}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{e.action}</td>
                   <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--slate-600)' }}>{e.record_id}</td>
@@ -99,6 +107,33 @@ export default function AuditPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {auditTotal > limit && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+            Page {page} of {Math.max(1, Math.ceil(auditTotal / limit))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1 || auditLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.min(Math.ceil(auditTotal / limit), p + 1))}
+              disabled={page >= Math.ceil(auditTotal / limit) || auditLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { Shield, MapPin, User, Clock, Hash, CheckCircle, AlertTriangle, RefreshCw, ExternalLink } from "lucide-react";
 import api from "@/lib/api";
 import CONFIG from "@/lib/config";
+import { LandLineageTree } from "@/components/LandLineageTree";
 
 export default function PublicRecordVerificationPage() {
   const params = useParams();
@@ -169,6 +170,16 @@ export default function PublicRecordVerificationPage() {
             <p style={{ color: '#94a3b8', fontSize: 11, marginTop: 4 }}>Time of verification: {new Date().toLocaleString()}</p>
           </div>
         </div>
+
+        {/* Lineage Tree Section */}
+        <div style={{ marginTop: 40, background: '#fff', padding: '40px', borderRadius: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <SectionTitle icon={<Shield size={16} />} title="Land Lineage & Mutation History" />
+          <LandLineageTree 
+             apiUrl={CONFIG.API_URL || 'http://localhost:5000'} 
+             recordId={record.record_id} 
+          />
+        </div>
+
       </div>
     </div>
   );

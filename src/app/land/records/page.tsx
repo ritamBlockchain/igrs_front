@@ -17,17 +17,10 @@ export default function LandRecordsPage() {
     setPage(1);
   }, [search, typeFilter]);
 
-  // Fetch ALL records on mount or filter change (so we can paginate locally)
+  // Fetch records on mount or filter change
   useEffect(() => {
-    fetchRecords(1, 500, { search, land_type: typeFilter });
-  }, [fetchRecords, search, typeFilter]);
-
-  const filteredRecords = records.filter(r =>
-    !typeFilter || r.land_type?.toLowerCase() === typeFilter.toLowerCase()
-  );
-
-  const localTotal = filteredRecords.length;
-  const displayRecords = filteredRecords.slice((page - 1) * limit, page * limit);
+    fetchRecords(page, limit, { search, land_type: typeFilter });
+  }, [fetchRecords, search, typeFilter, page]);
 
   return (
     <div className="animate-in">
@@ -58,10 +51,10 @@ export default function LandRecordsPage() {
       {/* Results count */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
-          {recordsLoading ? 'Loading...' : `Showing ${localTotal > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, localTotal)} of ${localTotal} records`}
+          {recordsLoading ? 'Loading...' : `Showing ${recordsTotal > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, recordsTotal)} of ${recordsTotal} records`}
         </div>
         <button
-          onClick={() => fetchRecords(1, 500, { search, land_type: typeFilter })}
+          onClick={() => fetchRecords(page, limit, { search, land_type: typeFilter })}
           disabled={recordsLoading}
           className="btn btn-outline"
           style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -94,14 +87,14 @@ export default function LandRecordsPage() {
                   Loading records from Fabric...
                 </td>
               </tr>
-            ) : displayRecords.length === 0 ? (
+            ) : records.length === 0 ? (
               <tr>
                 <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--slate-500)' }}>
                   No records found
                 </td>
               </tr>
             ) : (
-              displayRecords.map((r, i) => (
+              records.map((r, i) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '14px 16px', color: 'var(--slate-500)', fontSize: 13, fontWeight: 500 }}>
                     {(page - 1) * limit + i + 1}
@@ -139,10 +132,10 @@ export default function LandRecordsPage() {
       </div>
 
       {/* Pagination Controls */}
-      {localTotal > limit && (
+      {recordsTotal > limit && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
           <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
-            Page {page} of {Math.max(1, Math.ceil(localTotal / limit))}
+            Page {page} of {Math.max(1, Math.ceil(recordsTotal / limit))}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
@@ -155,8 +148,8 @@ export default function LandRecordsPage() {
             </button>
             <button
               className="btn btn-outline"
-              onClick={() => setPage(p => Math.min(Math.ceil(localTotal / limit), p + 1))}
-              disabled={page >= Math.ceil(localTotal / limit) || recordsLoading}
+              onClick={() => setPage(p => Math.min(Math.ceil(recordsTotal / limit), p + 1))}
+              disabled={page >= Math.ceil(recordsTotal / limit) || recordsLoading}
               style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
             >
               Next <ChevronRight size={14} />

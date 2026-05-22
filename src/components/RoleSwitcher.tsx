@@ -6,7 +6,7 @@ import { ChevronDown, UserCircle } from "lucide-react";
 import styles from './RoleSwitcher.module.css';
 
 export default function RoleSwitcher() {
-  const { role, roleInfo, setRole, availableRoles } = useRole();
+  const { role, roleInfo, clearRole } = useRole();
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -20,6 +20,11 @@ export default function RoleSwitcher() {
 
   if (!role) return null;
 
+  const handleSignOut = () => {
+    clearRole();
+    window.location.href = '/login';
+  };
+
   return (
     <div className={styles.container} ref={ref}>
       <button onClick={() => setIsOpen(!isOpen)} className={styles.trigger}>
@@ -30,20 +35,16 @@ export default function RoleSwitcher() {
 
       {isOpen && (
         <div className={styles.dropdown}>
-          <div className={styles.header}>Switch Role (Dev Mode)</div>
-          {availableRoles.map((r) => (
-            <button
-              key={r.role}
-              className={`${styles.option} ${role === r.role ? styles.active : ''}`}
-              onClick={() => { setRole(r.role); setIsOpen(false); }}
-            >
-              <span style={{ fontSize: '16px' }}>{r.icon}</span>
-              <div>
-                <div className={styles.optLabel}>{r.label}</div>
-                <div className={styles.optDesc}>{r.description.slice(0, 50)}</div>
-              </div>
-            </button>
-          ))}
+          <button
+            className={styles.option}
+            onClick={handleSignOut}
+          >
+            <span style={{ fontSize: '16px' }}>🚪</span>
+            <div>
+              <div className={styles.optLabel}>Sign Out</div>
+              <div className={styles.optDesc}>End your session and return to login</div>
+            </div>
+          </button>
         </div>
       )}
     </div>

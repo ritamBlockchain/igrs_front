@@ -31,10 +31,10 @@ export default function RegisterLandPage() {
     tehsil: '',
     district: '',
     area: '',
+    areaUnit: 'sqm',
     landType: '',
     docType: '',
     ownerId: '',
-    fatherName: '',
     ownershipType: '',
     indexHash: ''
   });
@@ -59,7 +59,6 @@ export default function RegisterLandPage() {
           landType: f.land_type || f.landType || '',
           docType: f.doc_type || f.documentType || '',
           ownerId: f.owner_name || f.ownerName || '',
-          fatherName: f.father_name || f.fatherName || '',
           ownershipType: f.ownership_type || f.ownershipType || '',
         };
       }
@@ -109,7 +108,7 @@ export default function RegisterLandPage() {
       const requiredFields = [
         'recordId', 'surveyNo', 'village', 
         'tehsil', 'district', 'area', 'landType', 
-        'docType', 'ownerId', 'fatherName', 'ownershipType'
+        'docType', 'ownerId', 'ownershipType'
       ];
       
       const allFilled = requiredFields.every(field => !!(formData as any)[field]);
@@ -140,7 +139,7 @@ export default function RegisterLandPage() {
     formData.recordId, formData.surveyNo, 
     formData.village, formData.tehsil, formData.district, 
     formData.area, formData.landType, formData.docType, 
-    formData.ownerId, formData.fatherName, formData.ownershipType
+    formData.ownerId, formData.ownershipType
   ]);
 
   const copyToClipboard = (text: string, isIndex: boolean) => {
@@ -327,14 +326,39 @@ export default function RegisterLandPage() {
               />
             </div>
             <div>
-              <label className="label">Area (sqm) *</label>
-              <input 
-                className="input" 
-                type="number" 
-                placeholder="e.g. 500" 
-                value={formData.area}
-                onChange={(e) => updateField('area', e.target.value)}
-              />
+              <label className="label">Area *</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input 
+                  className="input" 
+                  type="number" 
+                  placeholder="e.g. 500" 
+                  value={formData.area}
+                  onChange={(e) => updateField('area', e.target.value)}
+                  style={{ flex: 2 }}
+                />
+                <select 
+                  className="input" 
+                  value={formData.areaUnit} 
+                  onChange={(e) => updateField('areaUnit', e.target.value)}
+                  style={{ flex: 1, padding: '8px', minWidth: '90px' }}
+                >
+                  <option value="sqm">sq.m</option>
+                  <option value="hectare">Hectare</option>
+                  <option value="acre">Acre</option>
+                  <option value="bigha">Bigha</option>
+                  <option value="sqft">sq.ft</option>
+                  <option value="sqyard">sq.yd</option>
+                </select>
+              </div>
+              {formData.area && formData.areaUnit !== 'sqm' && (
+                <div style={{ fontSize: 11, color: 'var(--blue-600)', fontWeight: 600, marginTop: 4 }}>
+                  ≈ {(() => {
+                    const val = parseFloat(formData.area) || 0;
+                    const multipliers: Record<string, number> = { hectare: 10000, acre: 4046.86, bigha: 2529.28, sqft: 0.092903, sqyard: 0.836127 };
+                    return (val * multipliers[formData.areaUnit as string]).toFixed(2);
+                  })()} sqm
+                </div>
+              )}
             </div>
             <div>
               <label className="label">Land Type *</label>
@@ -371,15 +395,6 @@ export default function RegisterLandPage() {
                 placeholder="e.g. Rajesh Patel" 
                 value={formData.ownerId}
                 onChange={(e) => updateField('ownerId', e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label">Father's Name</label>
-              <input 
-                className="input" 
-                placeholder="e.g. Gambhir Singh" 
-                value={formData.fatherName}
-                onChange={(e) => updateField('fatherName', e.target.value)}
               />
             </div>
             <div>
@@ -441,10 +456,10 @@ export default function RegisterLandPage() {
                 tehsil: '',
                 district: '',
                 area: '',
+                areaUnit: 'sqm',
                 landType: '',
                 docType: '',
                 ownerId: '',
-                fatherName: '',
                 ownershipType: '',
                 indexHash: ''
               });
@@ -471,9 +486,13 @@ export default function RegisterLandPage() {
                       block_id: 0,
                       taluka_id: 0,
                       owner_name: formData.ownerId, // ownerId field in UI is actually ownerName
-                      father_name: formData.fatherName,
                       survey_no: formData.surveyNo,
-                      area: formData.area,
+                      area: (() => {
+                        const val = parseFloat(formData.area) || 0;
+                        if (formData.areaUnit === 'sqm') return formData.area;
+                        const multipliers: Record<string, number> = { hectare: 10000, acre: 4046.86, bigha: 2529.28, sqft: 0.092903, sqyard: 0.836127 };
+                        return (val * multipliers[formData.areaUnit as string]).toFixed(2);
+                      })(),
                       doc_type: formData.docType,
                       ownership_type: formData.ownershipType,
                       uploaded_by: 'Revenue Admin',
@@ -484,7 +503,6 @@ export default function RegisterLandPage() {
                       record_id: formData.recordId,
                       owner_name: formData.ownerId,
                       owner_id: formData.ownerId,
-                      father_name: formData.fatherName,
                       survey_no: formData.surveyNo,
                       khasra_no: formData.khasraNo,
                       village_name: formData.village,
@@ -494,7 +512,12 @@ export default function RegisterLandPage() {
                       district_id: 1,
                       block_id: 1,
                       taluka_id: 1,
-                      area_sq_m: parseFloat(formData.area) || 0,
+                      area_sq_m: (() => {
+                        const val = parseFloat(formData.area) || 0;
+                        if (formData.areaUnit === 'sqm') return val;
+                        const multipliers: Record<string, number> = { hectare: 10000, acre: 4046.86, bigha: 2529.28, sqft: 0.092903, sqyard: 0.836127 };
+                        return val * multipliers[formData.areaUnit as string];
+                      })(),
                       land_type: formData.landType,
                       doc_type: formData.docType,
                       ownership_type: formData.ownershipType,

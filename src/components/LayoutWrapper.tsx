@@ -5,7 +5,7 @@ import RoleSwitcher from "@/components/RoleSwitcher";
 import { useRole } from "@/context/RoleContext";
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
-  const { role, isLoading } = useRole();
+  const { role, token, isLoading } = useRole();
 
   // Prevent flash while hydrating from localStorage
   if (isLoading) {
@@ -19,9 +19,22 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     );
   }
 
-  // No role selected → full-width landing (no sidebar)
-  if (!role) {
+  const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/login';
+
+  // No role/token selected -> if on login page, render it, else redirect
+  if (!role || !token) {
+    if (isLoginPage || (typeof window !== 'undefined' && window.location.pathname === '/')) {
+      return <>{children}</>;
+    }
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
     return <>{children}</>;
+  }
+
+  // If logged in and on login page, redirect to dashboard
+  if (isLoginPage && typeof window !== 'undefined') {
+    window.location.href = '/land/dashboard';
   }
 
   return (

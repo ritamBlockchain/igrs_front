@@ -16,10 +16,10 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { id: 1, title: 'Create Inheritance', actor: 'Revenue Admin', allowedRoles: ['Revenue Admin', 'Admin'], description: 'Register inheritance with heirs and shares' },
-  { id: 2, title: 'Verify (Talati)', actor: 'Talati / Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Field verification and heir validation by Talati' },
-  { id: 3, title: 'Approve (Tehsildar)', actor: 'Tehsildar / Collector', allowedRoles: ['Collector', 'Admin'], description: 'Administrative approval of inheritance claim' },
-  { id: 4, title: 'Finalize Transfer', actor: 'Talati / Revenue', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Execute transfer to heirs on ledger' },
+  { id: 1, title: 'Create Inheritance', actor: 'Registrar', allowedRoles: ['Court Registrar', 'Admin', 'Revenue Admin'], description: 'Register inheritance with heirs and shares' },
+  { id: 2, title: 'Verify (Revenue Officer)', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Admin'], description: 'Field verification and heir validation by Revenue Officer' },
+  { id: 3, title: 'Approve (District Magistrate)', actor: 'District Magistrate', allowedRoles: ['District Magistrate', 'Admin'], description: 'Executive approval of inheritance claim' },
+  { id: 4, title: 'Finalize / Reject Transfer', actor: 'Collector', allowedRoles: ['Collector', 'Admin'], description: 'Execute transfer to heirs on ledger or reject' },
 ];
 
 export default function InheritanceMutationPage() {
@@ -54,6 +54,7 @@ export default function InheritanceMutationPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const addHeir = () => setHeirs([...heirs, { name: '', share: '', area: '' }]);
   const removeHeir = (i: number) => setHeirs(heirs.filter((_, idx) => idx !== i));
@@ -136,7 +137,7 @@ export default function InheritanceMutationPage() {
     }
   };
 
-  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize', nextStep?: number) => {
+  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize' | 'reject', nextStep?: number) => {
     if (!landId) {
       setResult({ success: false, message: 'Land ID is required' });
       return;
@@ -148,13 +149,21 @@ export default function InheritanceMutationPage() {
       if (action === 'verify') res = await api.verifyTalati(landId, 'INHERITANCE');
       else if (action === 'approve') res = await api.approveMutation(landId, 'INHERITANCE');
       else if (action === 'finalize') res = await api.finalizeMutation(landId, 'INHERITANCE');
+      else if (action === 'reject') {
+        if (!rejectionReason.trim()) {
+          setResult({ success: false, message: 'Rejection reason is required' });
+          setSubmitting(false);
+          return;
+        }
+        res = await api.rejectMutation(landId, 'INHERITANCE', rejectionReason);
+      }
 
       setResult({ success: true, message: res?.message || `${action} successful!` });
       if (nextStep) {
         setTimeout(() => { setCurrentStep(nextStep); setResult(null); }, 2000);
       } else if (action === 'finalize') {
         setTimeout(() => {
-          setLandId(''); setPreviousOwner(''); setHeirs([{ name: '', share: '' }]);
+          setLandId(''); setPreviousOwner(''); setHeirs([{ name: '', share: '', area: '' }]); setRejectionReason('');
           setCurrentStep(1); setResult(null);
         }, 3000);
       }
@@ -169,7 +178,7 @@ export default function InheritanceMutationPage() {
     <div className="animate-in">
       <div className="page-header">
         <h1>👨‍👩‍👧‍👦 Inheritance Mutation Workflow</h1>
-        <p>CREATED → VERIFIED_BY_TALATI → APPROVED_BY_TEHSILDAR → FINALIZED</p>
+        <p>CREATED → VERIFIED_BY_REVENUE_OFFICER → VERIFIED_BY_DISTRICT_MAGISTRATE → FINALIZED/REJECTED</p>
       </div>
 
       {/* Stepper */}
@@ -234,11 +243,12 @@ export default function InheritanceMutationPage() {
 
                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {heirs.map((h, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px 40px', gap: 12, alignItems: 'end' }}>
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px 100px 40px', gap: 12, alignItems: 'end' }}>
                       <div>
                         <label className="label" style={{ fontSize: 10 }}>Heir Name</label>
                         <input className="input" placeholder="Full name" value={h.name} onChange={e => updateHeir(i, 'name', e.target.value)} />
                       </div>
+
                       <div>
                         <label className="label" style={{ fontSize: 10 }}>Area (sqm) *</label>
                         <input className="input" type="number" step="0.01" placeholder="e.g. 500" value={h.area} onChange={e => updateHeir(i, 'area', e.target.value)} />
@@ -291,7 +301,7 @@ export default function InheritanceMutationPage() {
         <StepCard step={STEPS[1]} role={role} onSubmit={() => handleWorkflowStep('verify', 3)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--blue-50)', borderRadius: 12, marginBottom: 16, border: '1px solid var(--blue-200)' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-700)', marginBottom: 4 }}>Field Verification Pending</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Talati must verify the deceased person&apos;s heirs and confirm the legitimacy of the shares.</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Revenue Officer must verify the deceased person&apos;s heirs and confirm the legitimacy of the shares.</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to verify" value={landId} onChange={e => setLandId(e.target.value)} /></div>
         </StepCard>
@@ -300,18 +310,49 @@ export default function InheritanceMutationPage() {
       {currentStep === 3 && (
         <StepCard step={STEPS[2]} role={role} onSubmit={() => handleWorkflowStep('approve', 4)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--warning-bg)', borderRadius: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting Tehsildar Approval</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_TALATI · Tehsildar reviews Talati report and heirs list for final administrative approval.</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting District Magistrate Approval</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_REVENUE_OFFICER · District Magistrate reviews Revenue Officer report and heirs list for final executive approval.</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to approve" value={landId} onChange={e => setLandId(e.target.value)} /></div>
         </StepCard>
       )}
 
       {currentStep === 4 && (
-        <StepCard step={STEPS[3]} role={role} onSubmit={() => handleWorkflowStep('finalize')} loading={submitting} result={result}>
+        <StepCard 
+          step={STEPS[3]} 
+          role={role} 
+          onSubmit={() => handleWorkflowStep('finalize')} 
+          loading={submitting} 
+          result={result}
+          customActions={
+            <div style={{ display: 'flex', gap: 12, width: '100%', flexDirection: 'column' }}>
+              <div>
+                <label className="label">Rejection Reason (if rejecting)</label>
+                <input className="input" placeholder="Enter reason for rejection" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ borderColor: 'var(--red-500)', color: 'var(--red-600)' }}
+                  onClick={() => handleWorkflowStep('reject')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Reject Mutation
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => handleWorkflowStep('finalize')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Finalize Transfer <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          }
+        >
           <div style={{ padding: 20, background: 'var(--success-bg)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>Ready to Finalize</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · This will commit the ownership transfer to the Fabric ledger.</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_DISTRICT_MAGISTRATE · This will commit the ownership transfer to the Fabric ledger.</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to finalize" value={landId} onChange={e => setLandId(e.target.value)} /></div>
           <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>This will transfer ownership to heirs per their shares, update the owner on the ledger, increment version, and recompute record hash.</p>
@@ -341,10 +382,10 @@ export default function InheritanceMutationPage() {
   );
 }
 
-function StepCard({ step, role, children, onSubmit, loading, result, disabled }: {
+function StepCard({ step, role, children, onSubmit, loading, result, disabled, customActions }: {
   step: Step; role: string | null; children: React.ReactNode;
   onSubmit?: () => void; loading?: boolean; result?: {success: boolean, message: string} | null;
-  disabled?: boolean;
+  disabled?: boolean; customActions?: React.ReactNode;
 }) {
   const canAct = role ? step.allowedRoles.includes(role) : false;
   return (
@@ -370,16 +411,22 @@ function StepCard({ step, role, children, onSubmit, loading, result, disabled }:
           {result.message}
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
-        <button
-          className="btn btn-primary"
-          style={{ opacity: (canAct && !loading && !disabled) ? 1 : 0.4, pointerEvents: (canAct && !loading && !disabled) ? 'auto' : 'none' }}
-          onClick={onSubmit}
-          disabled={!canAct || loading || disabled}
-        >
-          {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
-        </button>
-      </div>
+      {customActions ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          {customActions}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          <button
+            className="btn btn-primary"
+            style={{ opacity: (canAct && !loading && !disabled) ? 1 : 0.4, pointerEvents: (canAct && !loading && !disabled) ? 'auto' : 'none' }}
+            onClick={onSubmit}
+            disabled={!canAct || loading || disabled}
+          >
+            {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

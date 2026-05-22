@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { Package, Shield, RefreshCw, ExternalLink } from "lucide-react";
+import { Package, Shield, RefreshCw, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { useData } from "@/context/DataContext";
 import { useRole } from "@/context/RoleContext";
 
@@ -9,11 +9,15 @@ export default function BatchesPage() {
   const { batches, batchesLoading, batchesError, refreshBatches, stats } = useData();
   const { role } = useRole();
   const canCreate = role && ['Admin', 'Revenue Admin'].includes(role);
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
   // Fetch batches on mount
   useEffect(() => {
-    refreshBatches();
-  }, [refreshBatches]);
+    refreshBatches(page, limit);
+  }, [refreshBatches, page]);
+
+  const totalBatches = stats?.total_batches || 0;
 
   return (
     <div className="animate-in">
@@ -23,7 +27,7 @@ export default function BatchesPage() {
           <p>Legacy data ingestion and Merkle proof verification</p>
         </div>
         <button 
-          onClick={refreshBatches} 
+          onClick={() => refreshBatches(page, limit)} 
           disabled={batchesLoading}
           className="btn btn-outline"
           style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -48,8 +52,15 @@ export default function BatchesPage() {
         ))}
       </div>
 
+      {/* Results count */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+          {batchesLoading ? 'Loading...' : `Showing ${totalBatches > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, totalBatches)} of ${totalBatches} batches`}
+        </div>
+      </div>
+
       {/* Batch List */}
-      <div className="card" style={{ marginBottom: 24 }}>
+      <div className="card" style={{ marginBottom: 24, overflow: 'hidden' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--slate-100)' }}>
           <h3 style={{ margin: 0 }}>All Batches</h3>
         </div>
@@ -69,14 +80,17 @@ export default function BatchesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--slate-100)' }}>
-                {['Batch ID', 'Records', 'Status', 'Merkle Root', 'Transaction', ''].map(h => (
+                {['SL. No.', 'Batch ID', 'Records', 'Status', 'Merkle Root', 'Transaction', ''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, color: 'var(--slate-400)', textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {batches.map(b => (
-                <tr key={b.id} style={{ borderBottom: '1px solid var(--slate-50)' }}>
+              {batches.map((b, i) => (
+                <tr key={b.id} style={{ borderBottom: '1px solid var(--slate-50)', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--blue-50)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '12px 16px', color: 'var(--slate-500)', fontSize: 13, fontWeight: 500 }}>
+                    {(page - 1) * limit + i + 1}
+                  </td>
                   <td style={{ padding: '12px 16px', fontWeight: 600 }}>{b.batch_id}</td>
                   <td style={{ padding: '12px 16px' }}>{b.records_count}</td>
                   <td style={{ padding: '12px 16px' }}>
@@ -112,6 +126,33 @@ export default function BatchesPage() {
           </table>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {totalBatches > limit && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 24 }}>
+          <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+            Page {page} of {Math.max(1, Math.ceil(totalBatches / limit))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1 || batchesLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.min(Math.ceil(totalBatches / limit), p + 1))}
+              disabled={page >= Math.ceil(totalBatches / limit) || batchesLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Forms - Admin Only */}
       {canCreate && (

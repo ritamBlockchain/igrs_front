@@ -47,7 +47,7 @@ interface DataContextType {
   batches: Batch[];
   batchesLoading: boolean;
   batchesError: string | null;
-  refreshBatches: () => Promise<void>;
+  refreshBatches: (page?: number, limit?: number, status?: string) => Promise<void>;
 
   // Latest Anchor
   latestAnchor: Anchor | null;
@@ -58,7 +58,7 @@ interface DataContextType {
   auditEntries: AuditEntry[];
   auditLoading: boolean;
   auditTotal: number;
-  fetchAudit: (page?: number, limit?: number) => Promise<void>;
+  fetchAudit: (page?: number, limit?: number, search?: string) => Promise<void>;
 
   // Jantri
   jantriRates: JantriRate[];
@@ -270,11 +270,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Fetch Batches
-  const refreshBatches = useCallback(async () => {
+  const refreshBatches = useCallback(async (page = 1, limit = 20, status = '') => {
     setBatchesLoading(true);
     setBatchesError(null);
     try {
-      const data = await api.getBatches();
+      const data = await api.getBatches(page, limit, status);
       setBatches(data.batches || []);
       
       // Update global stats if batch stats are returned
@@ -285,7 +285,6 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             ...prev,
             total_batches: norm(data.stats.total),
             anchored_batches: norm(data.stats.anchored),
-            total_records: norm(data.stats.total_records) || prev.total_records,
           };
         });
       }
@@ -310,11 +309,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Fetch Audit Trail
-  const fetchAudit = useCallback(async (page = 1, limit = 20) => {
+  const fetchAudit = useCallback(async (page = 1, limit = 20, search = '') => {
     setAuditLoading(true);
     try {
-      const data = await api.getAuditTrail(page, limit);
-      setAuditEntries(data.entries || []);
+      const data = await api.getAuditTrail(page, limit, search);
+      setAuditEntries(data.logs || []);
       setAuditTotal(data.total || 0);
     } catch (err) {
       console.error('Failed to fetch audit:', err);

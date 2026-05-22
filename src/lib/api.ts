@@ -165,10 +165,12 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
   // Inject the active user role from localStorage so the backend RBAC works
   const storedRole = typeof window !== 'undefined' ? localStorage.getItem('jade_role') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('jade_token') : null;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(storedRole ? { 'X-User-Role': storedRole } : {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
 
@@ -176,6 +178,12 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     ...options,
     headers,
   });
+
+  if (response.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    localStorage.removeItem('jade_token');
+    localStorage.removeItem('jade_role');
+    window.location.href = '/login';
+  }
 
   if (!response.ok) {
     const error = await response.text();
@@ -187,6 +195,13 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
 // API Service Methods
 export const api = {
+  // Auth
+  login: (role: string, password: string, name?: string) => 
+    apiFetch<{ ok: boolean; token: string; role: string; user_name: string; expires_at: string }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ role, password, name }),
+    }),
+
   // Health
   health: () => apiFetch<{ status: string; fabric: { gateway_connected: boolean } }>('/api/health'),
 
@@ -224,10 +239,19 @@ export const api = {
     const formData = new FormData();
     formData.append('record_id', recordId);
     formData.append('file', file);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('jade_token') : null;
     return fetch(`${API_BASE_URL}/api/land/verify-document`, {
       method: 'POST',
       body: formData,
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      }
     }).then(async res => {
+      if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        localStorage.removeItem('jade_token');
+        localStorage.removeItem('jade_role');
+        window.location.href = '/login';
+      }
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Verification failed: ${text}`);
@@ -339,17 +363,23 @@ export const api = {
       body: JSON.stringify({ land_id: landId, mutation_type: mutationType }),
     }),
 
+  rejectMutation: (landId: string, mutationType: string, reason: string) => 
+    apiFetch<{ ok: boolean; message: string; reason: string }>('/api/mutations/reject', {
+      method: 'POST',
+      body: JSON.stringify({ land_id: landId, mutation_type: mutationType, reason }),
+    }),
+
   // Batches
-  getBatches: () => 
-    apiFetch<{ batches: Batch[]; stats: { total: number; anchored: number; pending: number; processing: number; total_records: number } }>('/api/batches'),
+  getBatches: (page = 1, limit = 20, status = '') => 
+    apiFetch<{ batches: Batch[]; stats: { total: number; anchored: number; pending: number; processing: number; total_records: number } }>(`/api/batches?page=${page}&limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
 
   // Anchors
   getLatestAnchor: () => 
     apiFetch<Anchor>('/api/anchors/latest'),
 
   // Audit
-  getAuditTrail: (page = 1, limit = 20) => 
-    apiFetch<{ entries: AuditEntry[]; page: number; total: number }>(`/api/audit?page=${page}&limit=${limit}`),
+  getAuditTrail: (page = 1, limit = 20, search = '') => 
+    apiFetch<{ logs: AuditEntry[]; page: number; total: number }>(`/api/audit?page=${page}&limit=${limit}${search ? `&search=${encodeURIComponent(search)}` : ''}`),
 
   // Jantri
   getJantriIntegration: () => 
@@ -392,11 +422,20 @@ export const api = {
   extractAadhaarData: (file: File) => {
     const formData = new FormData();
     formData.append('image', file);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('jade_token') : null;
     return fetch(`${API_BASE_URL}/api/ocr/aadhaar`, {
       method: 'POST',
       body: formData,
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      }
       // Do not set Content-Type, browser will set it automatically with boundary
     }).then(async res => {
+      if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        localStorage.removeItem('jade_token');
+        localStorage.removeItem('jade_role');
+        window.location.href = '/login';
+      }
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`OCR failed: ${text}`);
@@ -477,13 +516,20 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     const storedRole = typeof window !== 'undefined' ? localStorage.getItem('jade_role') : null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('jade_token') : null;
     return fetch(`${API_BASE_URL}/api/ingest/pdf-ingest`, {
       method: 'POST',
       body: formData,
       headers: {
         ...(storedRole ? { 'X-User-Role': storedRole } : {}),
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       }
     }).then(async res => {
+      if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        localStorage.removeItem('jade_token');
+        localStorage.removeItem('jade_role');
+        window.location.href = '/login';
+      }
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`OCR failed: ${text}`);

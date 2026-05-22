@@ -14,10 +14,10 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { id: 1, title: 'Register Govt Order', actor: 'Legal/Admin', allowedRoles: ['Legal Authority', 'Revenue Admin', 'Collector', 'Admin'], description: 'Register acquisition or land use change' },
-  { id: 2, title: 'Verify (Talati)', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Field verification of government order' },
-  { id: 3, title: 'Approve (Tehsildar)', actor: 'Tehsildar', allowedRoles: ['Collector', 'Admin'], description: 'Administrative approval' },
-  { id: 4, title: 'Execute Order', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Execute on ledger' },
+  { id: 1, title: 'Register Govt Order', actor: 'Revenue Admin', allowedRoles: ['Revenue Admin', 'Admin'], description: 'Register acquisition or land use change' },
+  { id: 2, title: 'Verify (Revenue Officer)', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Admin'], description: 'Field verification of government order' },
+  { id: 3, title: 'Approve (District Magistrate)', actor: 'District Magistrate', allowedRoles: ['District Magistrate', 'Admin'], description: 'Executive approval' },
+  { id: 4, title: 'Execute / Reject Order', actor: 'Collector', allowedRoles: ['Collector', 'Admin'], description: 'Execute on ledger or reject' },
 ];
 
 export default function GovernmentOrderPage() {
@@ -32,6 +32,7 @@ export default function GovernmentOrderPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const handleCreateMutation = async () => {
     if (!landId) {
@@ -62,7 +63,7 @@ export default function GovernmentOrderPage() {
     }
   };
 
-  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize', nextStep?: number) => {
+  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize' | 'reject', nextStep?: number) => {
     if (!landId) {
       setResult({ success: false, message: 'Land ID is required' });
       return;
@@ -74,13 +75,21 @@ export default function GovernmentOrderPage() {
       if (action === 'verify') res = await api.verifyTalati(landId, 'GOVERNMENT ORDER');
       else if (action === 'approve') res = await api.approveMutation(landId, 'GOVERNMENT ORDER');
       else if (action === 'finalize') res = await api.finalizeMutation(landId, 'GOVERNMENT ORDER');
+      else if (action === 'reject') {
+        if (!rejectionReason.trim()) {
+          setResult({ success: false, message: 'Rejection reason is required' });
+          setSubmitting(false);
+          return;
+        }
+        res = await api.rejectMutation(landId, 'GOVERNMENT ORDER', rejectionReason);
+      }
 
       setResult({ success: true, message: res?.message || `${action} successful!` });
       if (nextStep) {
         setTimeout(() => { setCurrentStep(nextStep); setResult(null); }, 2000);
       } else if (action === 'finalize') {
         setTimeout(() => {
-          setLandId(''); setCollectorId(''); setNewLandType('');
+          setLandId(''); setCollectorId(''); setNewLandType(''); setRejectionReason('');
           setCurrentStep(1); setResult(null);
         }, 3000);
       }
@@ -161,18 +170,49 @@ export default function GovernmentOrderPage() {
       {currentStep === 3 && (
         <StepCard step={STEPS[2]} role={role} onSubmit={() => handleWorkflowStep('approve', 4)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--warning-bg)', borderRadius: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting Tehsildar Approval</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_TALATI · Ready for administrative sign-off</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting District Magistrate Approval</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_REVENUE_OFFICER · Ready for executive sign-off</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to approve" value={landId} onChange={e => setLandId(e.target.value)} /></div>
         </StepCard>
       )}
 
       {currentStep === 4 && (
-        <StepCard step={STEPS[3]} role={role} onSubmit={() => handleWorkflowStep('finalize')} loading={submitting} result={result}>
+        <StepCard 
+          step={STEPS[3]} 
+          role={role} 
+          onSubmit={() => handleWorkflowStep('finalize')} 
+          loading={submitting} 
+          result={result}
+          customActions={
+            <div style={{ display: 'flex', gap: 12, width: '100%', flexDirection: 'column' }}>
+              <div>
+                <label className="label">Rejection Reason (if rejecting)</label>
+                <input className="input" placeholder="Enter reason for rejection" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ borderColor: 'var(--red-500)', color: 'var(--red-600)' }}
+                  onClick={() => handleWorkflowStep('reject')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Reject Mutation
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => handleWorkflowStep('finalize')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Execute Order <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          }
+        >
           <div style={{ padding: 20, background: 'var(--success-bg)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>Ready to Execute</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Government order will be executed on the ledger</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_DISTRICT_MAGISTRATE · Government order will be executed on the ledger</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to execute" value={landId} onChange={e => setLandId(e.target.value)} /></div>
           <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>This will execute the government order on the Fabric ledger, applying the land use change or acquisition.</p>
@@ -188,9 +228,11 @@ export default function GovernmentOrderPage() {
   );
 }
 
-function StepCard({ step, role, children, onSubmit, loading, result }: {
+function StepCard({ step, role, children, onSubmit, loading, result, disabled, customActions }: {
   step: Step; role: string | null; children: React.ReactNode;
   onSubmit?: () => void; loading?: boolean; result?: {success: boolean, message: string} | null;
+  customActions?: React.ReactNode;
+  disabled?: boolean;
 }) {
   const canAct = role ? step.allowedRoles.includes(role) : false;
   return (
@@ -216,16 +258,22 @@ function StepCard({ step, role, children, onSubmit, loading, result }: {
           {result.message}
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
-        <button
-          className="btn btn-primary"
-          style={{ opacity: canAct && !loading ? 1 : 0.4, pointerEvents: canAct && !loading ? 'auto' : 'none' }}
-          onClick={onSubmit}
-          disabled={!canAct || loading}
-        >
-          {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
-        </button>
-      </div>
+      {customActions ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          {customActions}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          <button
+            className="btn btn-primary"
+            style={{ opacity: canAct && !loading ? 1 : 0.4, pointerEvents: canAct && !loading ? 'auto' : 'none' }}
+            onClick={onSubmit}
+            disabled={!canAct || loading}
+          >
+            {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

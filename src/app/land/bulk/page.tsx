@@ -81,19 +81,19 @@ export default function BulkOperationsPage() {
 
       // 13-field canonical structure matching user's specific JSON schema for Polygon/EVM parity
       const payload = {
-        record_id: record.record_id,
+        recordId: record.record_id,
         status: normalizedStatus,
-        owner_name: (record.owner_name || '').trim(),
-        father_name: (record.father_name || '').trim(),
-        owner_id: (record.owner_id || '').trim(),
-        survey_no: (record.survey_no || '').trim(),
-        khasra_no: (record.khasra_no || '').trim(),
-        area_sq_m: (record.area_sq_m?.toString() || '').trim(),
-        land_type: (record.land_type || '').trim(),
-        village_name: (record.village_name || '').trim(),
-        'tehsil/taluka': (record['tehsil/taluka'] || '').trim(),
-        district_name: (record.district_name || '').trim(),
-        ownership_type: (record.ownership_type || '').trim(),
+        ownerName: (record.owner_name || '').trim(),
+        fatherName: (record.father_name || '').trim(),
+        ownerId: (record.owner_id || '').trim(),
+        surveyNumber: (record.survey_no || '').trim(),
+        khasraNumber: (record.khasra_no || '').trim(),
+        area: (record.area_sq_m?.toString() || '').trim(),
+        landType: (record.land_type || '').trim(),
+        village: (record.village_name || '').trim(),
+        tehsil: (record['tehsil/taluka'] || '').trim(),
+        district: (record.district_name || '').trim(),
+        ownershipType: (record.ownership_type || '').trim(),
       };
       
       const recordString = JSON.stringify(payload);

@@ -1,19 +1,20 @@
 'use client';
 
-import { useEffect } from "react";
-import { ExternalLink, Layers, Shield, Database, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ExternalLink, Layers, Shield, Database, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useData } from "@/context/DataContext";
 
 export default function AnchorsPage() {
   const { batches, batchesLoading, refreshBatches, latestAnchor, stats } = useData();
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
   // Fetch batches on mount
   useEffect(() => {
-    refreshBatches();
-  }, [refreshBatches]);
+    refreshBatches(page, limit, 'anchored');
+  }, [refreshBatches, page]);
 
-  // Filter anchored batches
-  const anchoredBatches = batches.filter(b => b.status === 'anchored' || b.tx_hash);
+  const anchoredTotal = stats?.anchored_batches || 0;
 
   return (
     <div className="animate-in">
@@ -21,7 +22,7 @@ export default function AnchorsPage() {
         <div><h1>⛓️ Blockchain Anchors</h1><p>L2 public verification via Polygon Amoy Testnet</p></div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button 
-            onClick={refreshBatches} 
+            onClick={() => refreshBatches(page, limit, 'anchored')} 
             disabled={batchesLoading}
             className="btn btn-outline"
             style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -37,7 +38,7 @@ export default function AnchorsPage() {
         {[
           { icon: <Layers size={20} />, label: 'Total Batches', val: stats?.total_batches || 0 },
           { icon: <Shield size={20} />, label: 'Anchored', val: stats?.anchored_batches || 0 },
-          { icon: <Database size={20} />, label: 'Records', val: stats?.total_records || 0 },
+          { icon: <Database size={20} />, label: 'Anchored Records', val: batches.reduce((sum, b) => sum + (b.records_count || 0), 0) },
         ].map(s => (
           <div key={s.label} className="card" style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--blue-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blue-600)' }}>{s.icon}</div>
@@ -74,21 +75,28 @@ export default function AnchorsPage() {
         </div>
       )}
 
+      {/* Results count */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+          {batchesLoading ? 'Loading...' : `Showing ${anchoredTotal > 0 ? (page - 1) * limit + 1 : 0} to ${Math.min(page * limit, anchoredTotal)} of ${anchoredTotal} anchored batches`}
+        </div>
+      </div>
+
       {batchesLoading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center' }}>
           <div style={{ color: 'var(--slate-500)' }}>Loading batches from Fabric...</div>
         </div>
-      ) : anchoredBatches.length === 0 ? (
+      ) : batches.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: 'center' }}>
           <div style={{ color: 'var(--slate-500)' }}>No anchored batches found</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {anchoredBatches.map(b => (
+          {batches.map((b, i) => (
             <div key={b.batch_id} className="card" style={{ padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)', fontWeight: 700, fontSize: 13 }}>{b.batch_id?.replace('BATCH-', '') || b.id}</div>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--blue-50)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blue-600)', fontWeight: 700, fontSize: 13 }}>{(page - 1) * limit + i + 1}</div>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>Batch {b.batch_id}</div>
                   <div style={{ fontSize: 11, color: 'var(--success)', fontWeight: 600 }}>{b.status?.toUpperCase() || 'ANCHORED'}</div>
@@ -123,6 +131,33 @@ export default function AnchorsPage() {
             </div>
           </div>
         ))}
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {anchoredTotal > limit && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          <div style={{ fontSize: 13, color: 'var(--slate-500)' }}>
+            Page {page} of {Math.max(1, Math.ceil(anchoredTotal / limit))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1 || batchesLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => setPage(p => Math.min(Math.ceil(anchoredTotal / limit), p + 1))}
+              disabled={page >= Math.ceil(anchoredTotal / limit) || batchesLoading}
+              style={{ padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       )}
     </div>

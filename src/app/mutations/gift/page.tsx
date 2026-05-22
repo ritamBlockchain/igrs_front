@@ -17,9 +17,9 @@ interface Step {
 
 const STEPS: Step[] = [
   { id: 1, title: 'Create Gift Mutation', actor: 'Registrar', allowedRoles: ['Court Registrar', 'Admin', 'Revenue Admin'], description: 'Register gift deed with donor/recipient details' },
-  { id: 2, title: 'Verify (Talati)', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Field verification and document validation' },
-  { id: 3, title: 'Approve (Tehsildar)', actor: 'Collector', allowedRoles: ['Collector', 'Admin'], description: 'Administrative approval by Tehsildar' },
-  { id: 4, title: 'Finalize Transfer', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Revenue Admin', 'Admin'], description: 'Execute gift transfer on ledger' },
+  { id: 2, title: 'Verify (Revenue Officer)', actor: 'Revenue Officer', allowedRoles: ['Revenue Officer', 'Admin'], description: 'Field verification and document validation' },
+  { id: 3, title: 'Approve (District Magistrate)', actor: 'District Magistrate', allowedRoles: ['District Magistrate', 'Admin'], description: 'Executive approval' },
+  { id: 4, title: 'Finalize / Reject Transfer', actor: 'Collector', allowedRoles: ['Collector', 'Admin'], description: 'Execute gift transfer on ledger or reject' },
 ];
 
 export default function GiftMutationPage() {
@@ -29,6 +29,7 @@ export default function GiftMutationPage() {
   // Form states
   const [landId, setLandId] = useState('');
   const [donor, setDonor] = useState('');
+
   const [giftDeedHash, setGiftDeedHash] = useState('');
   const [totalArea, setTotalArea] = useState(0);
 
@@ -77,6 +78,7 @@ export default function GiftMutationPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   // Auto-fill donor name when landId is entered
   useEffect(() => {
@@ -139,7 +141,7 @@ export default function GiftMutationPage() {
         record_id: landId,
         current_owner: donor,
         new_owner: effectiveRecipient,
-        mutation_type: 'Gift',
+        mutation_type: 'GIFT',
         supporting_doc: giftDeedHash,
         initiated_by: role || 'Registrar',
         role: role || 'Court Registrar',
@@ -153,7 +155,7 @@ export default function GiftMutationPage() {
     }
   };
 
-  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize', nextStep?: number) => {
+  const handleWorkflowStep = async (action: 'verify' | 'approve' | 'finalize' | 'reject', nextStep?: number) => {
     if (!landId) {
       setResult({ success: false, message: 'Land ID is required' });
       return;
@@ -165,13 +167,24 @@ export default function GiftMutationPage() {
       if (action === 'verify') res = await api.verifyTalati(landId, 'GIFT');
       else if (action === 'approve') res = await api.approveMutation(landId, 'GIFT');
       else if (action === 'finalize') res = await api.finalizeMutation(landId, 'GIFT');
+      else if (action === 'reject') {
+        if (!rejectionReason.trim()) {
+          setResult({ success: false, message: 'Rejection reason is required' });
+          setSubmitting(false);
+          return;
+        }
+        res = await api.rejectMutation(landId, 'GIFT', rejectionReason);
+      }
 
       setResult({ success: true, message: res?.message || `${action} successful!` });
       if (nextStep) {
         setTimeout(() => { setCurrentStep(nextStep); setResult(null); }, 2000);
       } else if (action === 'finalize') {
         setTimeout(() => {
-          setLandId(''); setDonor(''); setRecipient(''); setHeirs([]);
+          setLandId('');
+          setDonor('');
+          setHeirs([]);
+          setRejectionReason('');
           setCurrentStep(1); setResult(null);
         }, 3000);
       }
@@ -186,7 +199,7 @@ export default function GiftMutationPage() {
     <div className="animate-in">
       <div className="page-header">
         <h1>🎁 Gift Mutation Workflow</h1>
-        <p>CREATED → VERIFIED_BY_TALATI → APPROVED_BY_TEHSILDAR → FINALIZED</p>
+        <p>CREATED → VERIFIED_BY_REVENUE_OFFICER → VERIFIED_BY_DISTRICT_MAGISTRATE → FINALIZED/REJECTED</p>
       </div>
 
       {/* Stepper */}
@@ -239,9 +252,11 @@ export default function GiftMutationPage() {
               <input className="input mono" placeholder="SHA-256 hash" value={giftDeedHash} readOnly style={{ background: 'var(--slate-50)', color: 'var(--slate-600)' }} />
             </div>
 
-            <div>
-              <label className="label">Donor (Current Owner) *</label>
-              <input className="input" placeholder="Full name" value={donor} onChange={e => setDonor(e.target.value)} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div>
+                <label className="label">Donor (Current Owner) *</label>
+                <input className="input" placeholder="Full name" value={donor} onChange={e => setDonor(e.target.value)} />
+              </div>
             </div>
 
             {/* Shares Division Section */}
@@ -321,25 +336,56 @@ export default function GiftMutationPage() {
             <div style={{ fontSize: 12, color: 'var(--blue-600)', marginTop: 4, fontWeight: 500 }}>Recipient(s): {effectiveRecipient}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to verify" value={landId} onChange={e => setLandId(e.target.value)} /></div>
-          <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>Talati confirms field inspection, donor identity, and gift deed document validity.</p>
+          <p style={{ fontSize: 12, color: 'var(--slate-500)', margin: '12px 0' }}>Revenue Officer confirms field inspection, donor identity, and gift deed document validity.</p>
         </StepCard>
       )}
 
       {currentStep === 3 && (
         <StepCard step={STEPS[2]} role={role} onSubmit={() => handleWorkflowStep('approve', 4)} loading={submitting} result={result}>
           <div style={{ padding: 20, background: 'var(--warning-bg)', borderRadius: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting Tehsildar Approval</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_TALATI · Ready for administrative sign-off</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', marginBottom: 4 }}>Awaiting District Magistrate Approval</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_REVENUE_OFFICER · Ready for executive sign-off</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to approve" value={landId} onChange={e => setLandId(e.target.value)} /></div>
         </StepCard>
       )}
 
       {currentStep === 4 && (
-        <StepCard step={STEPS[3]} role={role} onSubmit={() => handleWorkflowStep('finalize')} loading={submitting} result={result}>
+        <StepCard 
+          step={STEPS[3]} 
+          role={role} 
+          onSubmit={() => handleWorkflowStep('finalize')} 
+          loading={submitting} 
+          result={result}
+          customActions={
+            <div style={{ display: 'flex', gap: 12, width: '100%', flexDirection: 'column' }}>
+              <div>
+                <label className="label">Rejection Reason (if rejecting)</label>
+                <input className="input" placeholder="Enter reason for rejection" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ borderColor: 'var(--red-500)', color: 'var(--red-600)' }}
+                  onClick={() => handleWorkflowStep('reject')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Reject Mutation
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => handleWorkflowStep('finalize')}
+                  disabled={!role || !STEPS[3].allowedRoles.includes(role) || submitting}
+                >
+                  Finalize Transfer <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          }
+        >
           <div style={{ padding: 20, background: 'var(--success-bg)', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', marginBottom: 4 }}>Ready to Finalize</div>
-            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: APPROVED_BY_TEHSILDAR · Ownership will be transferred to recipient(s)</div>
+            <div style={{ fontSize: 12, color: 'var(--slate-600)' }}>Status: VERIFIED_BY_DISTRICT_MAGISTRATE · Ownership will be transferred to recipient(s)</div>
             <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>New Owner: {effectiveRecipient}</div>
           </div>
           <div><label className="label">Land ID *</label><input className="input" placeholder="Land ID to finalize" value={landId} onChange={e => setLandId(e.target.value)} /></div>
@@ -370,9 +416,10 @@ export default function GiftMutationPage() {
   );
 }
 
-function StepCard({ step, role, children, onSubmit, loading, result }: {
+function StepCard({ step, role, children, onSubmit, loading, result, disabled, customActions }: {
   step: Step; role: string | null; children: React.ReactNode;
   onSubmit?: () => void; loading?: boolean; result?: {success: boolean, message: string} | null;
+  disabled?: boolean; customActions?: React.ReactNode;
 }) {
   const canAct = role ? step.allowedRoles.includes(role) : false;
   return (
@@ -398,16 +445,22 @@ function StepCard({ step, role, children, onSubmit, loading, result }: {
           {result.message}
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
-        <button
-          className="btn btn-primary"
-          style={{ opacity: canAct && !loading ? 1 : 0.4, pointerEvents: canAct && !loading ? 'auto' : 'none' }}
-          onClick={onSubmit}
-          disabled={!canAct || loading}
-        >
-          {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
-        </button>
-      </div>
+      {customActions ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          {customActions}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--slate-100)' }}>
+          <button
+            className="btn btn-primary"
+            style={{ opacity: (canAct && !loading && !disabled) ? 1 : 0.4, pointerEvents: (canAct && !loading && !disabled) ? 'auto' : 'none' }}
+            onClick={onSubmit}
+            disabled={!canAct || loading || disabled}
+          >
+            {loading ? <><RefreshCw size={16} className="spin" /> Submitting...</> : <>Submit Transaction <ArrowRight size={16} /></>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
